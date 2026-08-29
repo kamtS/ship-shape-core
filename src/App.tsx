@@ -31,6 +31,7 @@ import {
   type PitchSectionKey,
 } from '../shared/pitch';
 import { api, type AppConfig, type IssuePreview, type RepositoryChoice } from './api';
+import { stubSparringPartner } from './sparring';
 import { dismissStorageNote, isStorageNoteDismissed, loadPitches, savePitches } from './storage';
 
 type View = 'capture' | 'shape' | 'decide';
@@ -308,14 +309,29 @@ function Capture({ pitch, update, onContinue }: { pitch: Pitch; update: (patch: 
 
 function Shape({ pitch, update, completed, onDecide }: { pitch: Pitch; update: (patch: Partial<Pitch>) => void; completed: number; onDecide: () => void }) {
   const nextField = fieldMeta.find((field) => !pitch[field.key].trim());
+  const [sparringOn, setSparringOn] = useState(false);
+  const [suggestions, setSuggestions] = useState<Partial<Record<PitchSectionKey, string>>>({});
+
+  function spar(section: PitchSectionKey) {
+    stubSparringPartner.suggest(pitch, section).then((text) => setSuggestions((current) => ({ ...current, [section]: text }))).catch(() => undefined);
+  }
+  function dismissSuggestion(section: PitchSectionKey) {
+    setSuggestions(({ [section]: _dropped, ...rest }) => rest);
+  }
+
   return <section className="page shape-page">
     <div className="page-heading shape-heading"><div><span className="kicker">Shaping studio</span><h1>{pitch.title || 'Untitled note'}</h1><p>Each card is a decision worth thinking through—and every one is skippable. Only a bet asks for all {fieldMeta.length}.</p></div><div className="progress-ring" aria-label={`${completed} of ${fieldMeta.length} sections shaped`}><strong>{completed}</strong><span>of {fieldMeta.length}</span></div></div>
     <div className={`shape-guidance ${nextField ? '' : 'complete'}`}><CheckCircle2 size={17} /><span>{nextField ? <><strong>{completed} of {fieldMeta.length} shaped.</strong> If you keep going, <strong>{nextField.title.toLowerCase()}</strong> is a good next thought—or skip around freely.</> : <><strong>All {fieldMeta.length} shaped.</strong> Review the decision when you’re ready.</>}</span></div>
     {pitch.signal && <blockquote className="signal-quote"><span>Captured signal</span>{pitch.signal}</blockquote>}
+    <label className="sparring-toggle"><input type="checkbox" checked={sparringOn} onChange={(e) => { setSparringOn(e.target.checked); if (!e.target.checked) setSuggestions({}); }} /><span><strong>Sparring partner</strong><small>Opt-in, suggestion-only. A local stub—no AI provider is connected and nothing leaves this browser. Suggestions never touch your draft unless you use one.</small></span></label>
     <div className="shape-fields">
       {fieldMeta.map((field) => {
         const isComplete = Boolean(pitch[field.key].trim());
-        return <label className={`shape-field ${isComplete ? 'complete' : ''}`} key={field.key}><span className="shape-field-top"><span className="eyebrow">{field.eyebrow}</span><span className="field-requirement">{isComplete ? 'Shaped' : 'Open · skippable'}</span></span><strong>{field.title}</strong><small>{field.prompt}</small><textarea rows={field.key === 'solution' ? 7 : 5} value={pitch[field.key]} onChange={(e) => update({ [field.key]: e.target.value })} placeholder={field.placeholder} /></label>;
+        const suggestion = suggestions[field.key];
+        return <label className={`shape-field ${isComplete ? 'complete' : ''}`} key={field.key}><span className="shape-field-top"><span className="eyebrow">{field.eyebrow}</span><span className="field-requirement">{isComplete ? 'Shaped' : 'Open · skippable'}</span></span><strong>{field.title}</strong><small>{field.prompt}</small><textarea rows={field.key === 'solution' ? 7 : 5} value={pitch[field.key]} onChange={(e) => update({ [field.key]: e.target.value })} placeholder={field.placeholder} />
+          {sparringOn && suggestion === undefined && <button type="button" className="spar-button" onClick={() => spar(field.key)}><Sparkles size={13} /> Spar on this section</button>}
+          {sparringOn && suggestion !== undefined && <span className="sparring-box"><span className="sparring-label">Suggestion · stub · edit or discard</span><textarea rows={3} value={suggestion} onChange={(e) => setSuggestions((current) => ({ ...current, [field.key]: e.target.value }))} /><span className="sparring-actions"><button type="button" className="secondary" onClick={() => dismissSuggestion(field.key)}>Discard</button><button type="button" className="secondary use" onClick={() => { update({ [field.key]: pitch[field.key].trim() ? `${pitch[field.key]}\n\n${suggestion}` : suggestion }); dismissSuggestion(field.key); }}>Add to draft</button></span></span>}
+        </label>;
       })}
     </div>
     <div className="sticky-action"><span><CheckCircle2 size={17} /> Draft saved locally</span><button className="primary" onClick={onDecide}>Review decision <ArrowRight size={17} /></button></div>

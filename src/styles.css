@@ -114,6 +114,19 @@ input:focus, textarea:focus { border-color: #929c71; box-shadow: 0 0 0 3px rgba(
 .shape-guidance { display: flex; align-items: center; gap: 9px; margin: -12px 0 28px; padding: 12px 14px; border: 1px solid #e1d3a5; background: #fbf3d9; border-radius: 10px; color: #735f26; font-size: 11px; line-height: 1.45; }
 .shape-guidance svg { flex: none; }
 .shape-guidance.complete { border-color: #c9d2b6; background: #e9edde; color: #52603d; }
+.sparring-toggle { display: flex; align-items: flex-start; gap: 10px; margin: 0 0 16px; padding: 13px 14px; border: 1px dashed #cfc7b7; border-radius: 10px; background: rgba(255,255,255,.35); cursor: pointer; }
+.sparring-toggle input { width: 16px; height: 16px; accent-color: var(--olive); margin: 1px 0 0; flex: none; }
+.sparring-toggle span { margin: 0; }
+.sparring-toggle strong { display: block; font-size: 11px; }
+.sparring-toggle small { display: block; color: var(--muted); margin-top: 3px; line-height: 1.45; }
+.spar-button { margin-top: 10px; border: 1px dashed #c9c3b6; background: transparent; border-radius: 8px; padding: 7px 10px; font-size: 10px; font-weight: 700; color: #74736a; display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
+.spar-button:hover { color: var(--ink); border-color: #a9a294; }
+.sparring-box { display: block; margin-top: 10px; border: 1px dashed #d3b968; background: #fdf7e3; border-radius: 10px; padding: 11px 12px; }
+.sparring-label { display: block; font: 500 8px/1 'DM Mono', monospace; text-transform: uppercase; letter-spacing: .08em; color: #92742a; margin-bottom: 8px; }
+.sparring-box textarea { background: #fffdf6; border-color: #e2d3a2; font-size: 12px; }
+.sparring-actions { display: flex; justify-content: flex-end; gap: 7px; margin-top: 8px; }
+.sparring-actions .secondary { padding: 7px 10px; font-size: 10px; }
+.sparring-actions .use { border-color: #b9c49e; color: #4c5737; background: #eef2e2; }
 .sticky-action { position: sticky; bottom: 18px; margin-top: 22px; background: rgba(36,37,31,.94); color: white; padding: 12px 13px 12px 17px; border-radius: 14px; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 10px 30px rgba(39,36,27,.2); backdrop-filter: blur(8px); }
 .sticky-action > span { display: flex; align-items: center; gap: 8px; font-size: 11px; color: #d5d7ce; }
 .sticky-action .primary { background: #f0e9d9; color: var(--ink); box-shadow: none; }

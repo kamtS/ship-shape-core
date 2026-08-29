@@ -14,3 +14,21 @@ export function loadPitches(): Pitch[] {
 export function savePitches(pitches: Pitch[]): void {
   localStorage.setItem(KEY, JSON.stringify(pitches));
 }
+
+const STORAGE_NOTE_KEY = 'ship-shape:storage-note-dismissed:v1';
+
+export function isStorageNoteDismissed(): boolean {
+  try {
+    return localStorage.getItem(STORAGE_NOTE_KEY) === 'true';
+  } catch {
+    return false;
+  }
+}
+
+export function dismissStorageNote(): void {
+  try {
+    localStorage.setItem(STORAGE_NOTE_KEY, 'true');
+  } catch {
+    // The note simply reappears next visit if storage is unavailable.
+  }
+}

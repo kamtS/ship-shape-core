@@ -18,11 +18,28 @@ import {
   Sparkles,
   X,
 } from 'lucide-react';
-import { createEmptyPitch, isBetReady, type GitHubSnapshot, type Pitch, type PitchSectionKey } from '../shared/pitch';
+import {
+  canPreviewBet,
+  createEmptyPitch,
+  isBetReady,
+  LADDER_STAGES,
+  ladderStage,
+  shapedSectionCount,
+  type GitHubSnapshot,
+  type LadderStage,
+  type Pitch,
+  type PitchSectionKey,
+} from '../shared/pitch';
 import { api, type AppConfig, type IssuePreview, type RepositoryChoice } from './api';
-import { loadPitches, savePitches } from './storage';
+import { dismissStorageNote, isStorageNoteDismissed, loadPitches, savePitches } from './storage';
 
 type View = 'capture' | 'shape' | 'decide';
+
+const stageMeta: Record<LadderStage, { label: string; hint: string }> = {
+  note: { label: 'Note', hint: 'A name is enough. Saved instantly.' },
+  proposal: { label: 'Proposal', hint: 'Shape as much or as little as helps.' },
+  bet: { label: 'Bet', hint: 'A complete shape and a deliberate write.' },
+};
 
 const fieldMeta: Array<{ key: PitchSectionKey; eyebrow: string; title: string; prompt: string; placeholder: string }> = [
   { key: 'problem', eyebrow: '01 · Problem', title: 'What is worth solving?', prompt: 'Name the struggle, not the feature request.', placeholder: 'People abandon the weekly review because…' },
@@ -54,6 +71,7 @@ export function App() {
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [showStorageNote, setShowStorageNote] = useState(() => !isStorageNoteDismissed());
   const previewTriggerRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
@@ -72,7 +90,7 @@ export function App() {
 
   const selected = pitches.find((pitch) => pitch.id === selectedId);
   const ready = selected ? isBetReady(selected) : false;
-  const completed = selected ? fieldMeta.filter((field) => selected[field.key].trim()).length : 0;
+  const completed = selected ? shapedSectionCount(selected) : 0;
 
   function update(patch: Partial<Pitch>) {
     if (!selectedId) return;
@@ -92,7 +110,7 @@ export function App() {
   }
 
   async function prepareBet() {
-    if (!selected || !ready || selected.decision !== 'bet') return;
+    if (!selected || !canPreviewBet(selected)) return;
     setBusy(true); setError(null);
     try {
       const nextPreview = await api.preview(selected);
@@ -152,7 +170,7 @@ export function App() {
     } finally { setBusy(false); }
   }
 
-  const stage = useMemo(() => selected?.github ? 'Linked bet' : selected?.decision === 'bet' ? 'Ready to bet' : selected?.problem ? 'Shaping' : 'Opportunity', [selected]);
+  const stage = useMemo(() => selected ? (selected.github ? 'Linked bet' : stageMeta[ladderStage(selected)].label) : '', [selected]);
 
   return (
     <div className={`app-shell ${config.mode === 'demo' ? 'demo-mode' : ''}`}>
@@ -176,18 +194,24 @@ export function App() {
         <aside className="sidebar">
           <div className="side-heading">
             <span>Opportunity inbox</span>
-            <button className="icon-button" onClick={newOpportunity} title="Capture opportunity"><Plus size={17} /></button>
+            <button className="icon-button" onClick={newOpportunity} title="Jot a note"><Plus size={17} /></button>
           </div>
           <div className="pitch-list">
             {pitches.length === 0 ? (
-              <button className="empty-inbox" onClick={newOpportunity}><Inbox size={22} /><span>Capture your first signal</span></button>
+              <button className="empty-inbox" onClick={newOpportunity}><Inbox size={22} /><span>Jot your first note</span></button>
             ) : pitches.map((pitch) => (
-              <button key={pitch.id} className={`pitch-row ${pitch.id === selectedId ? 'selected' : ''}`} onClick={() => { setSelectedId(pitch.id); setView(pitch.problem ? 'shape' : 'capture'); }}>
-                <span className="pitch-title">{pitch.title || 'Untitled opportunity'}</span>
-                <span className="pitch-meta">{pitch.github ? `Issue #${pitch.github.number}` : pitch.problem ? 'Shaping' : 'Captured'} · {relativeDate(pitch.updatedAt)}</span>
+              <button key={pitch.id} className={`pitch-row ${pitch.id === selectedId ? 'selected' : ''}`} onClick={() => { setSelectedId(pitch.id); setView(ladderStage(pitch) === 'note' ? 'capture' : 'shape'); }}>
+                <span className="pitch-title">{pitch.title || 'Untitled note'}</span>
+                <span className="pitch-meta">{pitch.github ? `Issue #${pitch.github.number}` : stageMeta[ladderStage(pitch)].label} · {relativeDate(pitch.updatedAt)}</span>
               </button>
             ))}
           </div>
+          {showStorageNote && (
+            <div className="storage-note">
+              <p><strong>Drafts live in this browser.</strong> Notes and proposals are saved to this device’s local storage only—nothing syncs, and clearing site data removes them.</p>
+              <button className="icon-button" aria-label="Dismiss local storage note" onClick={() => { dismissStorageNote(); setShowStorageNote(false); }}><X size={14} /></button>
+            </div>
+          )}
           <div className="sidebar-note">
             <ShieldCheck size={16} />
             <p><strong>Not a project board.</strong><br />Local drafts help you decide. GitHub Issues record the bets you make.</p>
@@ -209,7 +233,9 @@ export function App() {
               {notice && <div className="notice success"><CheckCircle2 size={17} />{notice}<button onClick={() => setNotice(null)}><X size={15} /></button></div>}
               {error && <div className="notice error"><CircleDot size={17} />{error}<button onClick={() => setError(null)}><X size={15} /></button></div>}
 
-              {view === 'capture' && <Capture pitch={selected} update={update} onContinue={() => setView('shape')} />}
+              <LadderRail pitch={selected} update={update} />
+
+              {view === 'capture' && <Capture pitch={selected} update={update} onContinue={() => { if (ladderStage(selected) === 'note') update({ stage: 'proposal' }); setView('shape'); }} />}
               {view === 'shape' && <Shape pitch={selected} update={update} completed={completed} onDecide={() => setView('decide')} />}
               {view === 'decide' && (
                 <Decide
@@ -248,17 +274,34 @@ export function App() {
 }
 
 function EmptyState({ onCreate }: { onCreate: () => void }) {
-  return <div className="empty-state"><div className="empty-orbit"><Feather size={34} /></div><span className="kicker">A quiet place to think</span><h1>Start with the opportunity,<br />not the solution.</h1><p>Capture a signal. Give it boundaries. Make a deliberate bet only when the shape is clear.</p><button className="primary" onClick={onCreate}><Plus size={17} /> Capture an opportunity</button></div>;
+  return <div className="empty-state"><div className="empty-orbit"><Feather size={34} /></div><span className="kicker">A quiet place to think</span><h1>Start with the opportunity,<br />not the solution.</h1><p>Jot a note the moment something feels off. Shape it into a proposal when it keeps nagging. Bet only when the shape is complete.</p><button className="primary" onClick={onCreate}><Plus size={17} /> Jot a note</button></div>;
+}
+
+function LadderRail({ pitch, update }: { pitch: Pitch; update: (patch: Partial<Pitch>) => void }) {
+  const stage = ladderStage(pitch);
+  const position = LADDER_STAGES.indexOf(stage);
+  const linked = Boolean(pitch.github);
+  return <div className="ladder-rail" role="group" aria-label="Capture ladder">
+    {LADDER_STAGES.map((step, index) => {
+      const current = stage === step;
+      const clickable = !linked && !current && step !== 'bet';
+      return <button key={step} className={`ladder-step ${current ? 'current' : ''} ${index <= position ? 'reached' : ''}`} disabled={!clickable} onClick={() => update({ stage: step })} title={clickable ? `Move this pitch to the ${stageMeta[step].label.toLowerCase()} rung` : undefined}>
+        <strong>{stageMeta[step].label}</strong>
+        <small>{step === 'bet' && !current ? `${shapedSectionCount(pitch)} of ${fieldMeta.length} shaped` : stageMeta[step].hint}</small>
+      </button>;
+    })}
+    <span className="ladder-note">{linked ? 'Linked to an issue—the ladder is settled.' : 'Moving up is optional. Moving back down loses nothing.'}</span>
+  </div>;
 }
 
 function Capture({ pitch, update, onContinue }: { pitch: Pitch; update: (patch: Partial<Pitch>) => void; onContinue: () => void }) {
   return <section className="page narrow">
-    <div className="page-heading"><span className="kicker">Opportunity capture</span><h1>Something feels worth a closer look.</h1><p>Catch the signal while it’s fresh. You’re not committing to work yet.</p></div>
+    <div className="page-heading"><span className="kicker">Note · first rung</span><h1>Something feels worth a closer look.</h1><p>A note only needs a name—it saves the moment you type. Everything else is optional, now and later.</p></div>
     <div className="capture-card">
-      <label><span>Opportunity <em>required</em></span><input autoFocus required value={pitch.title} onChange={(e) => update({ title: e.target.value })} placeholder="A short, specific name" /></label>
+      <label><span>Note <em>the only thing a note needs</em></span><input autoFocus required value={pitch.title} onChange={(e) => update({ title: e.target.value })} placeholder="A short, specific name" /></label>
       <label><span>What did you notice? <em>optional</em></span><textarea rows={4} value={pitch.signal} onChange={(e) => update({ signal: e.target.value })} placeholder="The raw observation, friction, request, or possibility…" /></label>
       <label><span>Source <em>optional</em></span><input value={pitch.source} onChange={(e) => update({ source: e.target.value })} placeholder="Conversation, metric, customer, personal note…" /></label>
-      <div className="card-footer"><span>Saved locally as you type</span><button className="primary" disabled={!pitch.title.trim()} onClick={onContinue}>Start shaping <ArrowRight size={17} /></button></div>
+      <div className="card-footer"><span>Saved instantly to this browser</span><button className="primary" disabled={!pitch.title.trim()} onClick={onContinue}>{ladderStage(pitch) === 'note' ? 'Shape a proposal — optional' : 'Continue shaping'} <ArrowRight size={17} /></button></div>
     </div>
   </section>;
 }
@@ -266,13 +309,13 @@ function Capture({ pitch, update, onContinue }: { pitch: Pitch; update: (patch: 
 function Shape({ pitch, update, completed, onDecide }: { pitch: Pitch; update: (patch: Partial<Pitch>) => void; completed: number; onDecide: () => void }) {
   const nextField = fieldMeta.find((field) => !pitch[field.key].trim());
   return <section className="page shape-page">
-    <div className="page-heading shape-heading"><div><span className="kicker">Shaping studio</span><h1>{pitch.title || 'Untitled opportunity'}</h1><p>Turn the raw signal into a bounded pitch. Each section is required for a bet; a sentence or two is often enough.</p></div><div className="progress-ring" aria-label={`${completed} of ${fieldMeta.length} shaping sections complete`}><strong>{completed}</strong><span>of {fieldMeta.length}</span></div></div>
-    <div className={`shape-guidance ${nextField ? '' : 'complete'}`}><CheckCircle2 size={17} /><span>{nextField ? <>Next: complete <strong>{nextField.title}</strong>. You can revise anything later.</> : <><strong>Shape complete.</strong> Review the decision when you’re ready.</>}</span></div>
+    <div className="page-heading shape-heading"><div><span className="kicker">Shaping studio</span><h1>{pitch.title || 'Untitled note'}</h1><p>Each card is a decision worth thinking through—and every one is skippable. Only a bet asks for all {fieldMeta.length}.</p></div><div className="progress-ring" aria-label={`${completed} of ${fieldMeta.length} sections shaped`}><strong>{completed}</strong><span>of {fieldMeta.length}</span></div></div>
+    <div className={`shape-guidance ${nextField ? '' : 'complete'}`}><CheckCircle2 size={17} /><span>{nextField ? <><strong>{completed} of {fieldMeta.length} shaped.</strong> If you keep going, <strong>{nextField.title.toLowerCase()}</strong> is a good next thought—or skip around freely.</> : <><strong>All {fieldMeta.length} shaped.</strong> Review the decision when you’re ready.</>}</span></div>
     {pitch.signal && <blockquote className="signal-quote"><span>Captured signal</span>{pitch.signal}</blockquote>}
     <div className="shape-fields">
       {fieldMeta.map((field) => {
         const isComplete = Boolean(pitch[field.key].trim());
-        return <label className={`shape-field ${isComplete ? 'complete' : ''}`} key={field.key}><span className="shape-field-top"><span className="eyebrow">{field.eyebrow}</span><span className="field-requirement">{isComplete ? 'Complete' : 'Required'}</span></span><strong>{field.title}</strong><small>{field.prompt}</small><textarea required rows={field.key === 'solution' ? 7 : 5} value={pitch[field.key]} onChange={(e) => update({ [field.key]: e.target.value })} placeholder={field.placeholder} /></label>;
+        return <label className={`shape-field ${isComplete ? 'complete' : ''}`} key={field.key}><span className="shape-field-top"><span className="eyebrow">{field.eyebrow}</span><span className="field-requirement">{isComplete ? 'Shaped' : 'Open · skippable'}</span></span><strong>{field.title}</strong><small>{field.prompt}</small><textarea rows={field.key === 'solution' ? 7 : 5} value={pitch[field.key]} onChange={(e) => update({ [field.key]: e.target.value })} placeholder={field.placeholder} /></label>;
       })}
     </div>
     <div className="sticky-action"><span><CheckCircle2 size={17} /> Draft saved locally</span><button className="primary" onClick={onDecide}>Review decision <ArrowRight size={17} /></button></div>
@@ -291,13 +334,13 @@ function Decide({ pitch, update, ready, config, busy, repositories, onSelectRepo
 
     <div className="decision-grid">
       <button className={`decision-choice ${pitch.decision === 'pass' ? 'selected pass' : ''}`} onClick={() => update({ decision: 'pass' })}><span className="decision-icon"><X size={20} /></span><strong>Pass for now</strong><small>Keep the shaped thinking. Make no GitHub write.</small></button>
-      <button className={`decision-choice ${pitch.decision === 'bet' ? 'selected bet' : ''}`} onClick={() => update({ decision: 'bet' })}><span className="decision-icon"><Check size={20} /></span><strong>Make the bet</strong><small>Prepare a canonical GitHub Issue for review.</small></button>
+      <button className={`decision-choice ${pitch.decision === 'bet' ? 'selected bet' : ''}`} onClick={() => update({ decision: 'bet', stage: 'bet' })}><span className="decision-icon"><Check size={20} /></span><strong>Make the bet</strong><small>Prepare a canonical GitHub Issue for review.</small></button>
     </div>
     <div className="readiness-card">
-      <div><span className="kicker">Bet readiness</span><strong>{ready ? 'The pitch has a complete shape.' : 'The pitch still has open space.'}</strong><p>{ready ? 'You can review the exact GitHub write. Nothing is sent until you confirm.' : 'Complete every shaping section before making a bet.'}</p></div>
-      <div className={`readiness-mark ${ready ? 'ready' : ''}`}>{ready ? <Check size={22} /> : `${fieldMeta.filter((field) => pitch[field.key].trim()).length}/${fieldMeta.length}`}</div>
+      <div><span className="kicker">Bet readiness</span><strong>{ready ? 'The pitch has a complete shape.' : `${shapedSectionCount(pitch)} of ${fieldMeta.length} shaped so far.`}</strong><p>{ready ? 'You can review the exact GitHub write. Nothing is sent until you confirm.' : 'A note or proposal can stay open-ended forever. Only a bet asks for all seven sections.'}</p></div>
+      <div className={`readiness-mark ${ready ? 'ready' : ''}`}>{ready ? <Check size={22} /> : `${shapedSectionCount(pitch)}/${fieldMeta.length}`}</div>
     </div>
-    <button ref={previewTriggerRef} className="bet-button" disabled={!ready || pitch.decision !== 'bet' || busy || !targetReady} onClick={onPrepare}>{busy ? <Loader2 className="spin" size={18} /> : <GitPullRequest size={18} />}{!targetReady ? 'Connect GitHub and choose a repository' : pitch.github ? 'Review GitHub update' : 'Review and make the bet'}<ArrowRight size={18} /></button>
+    <button ref={previewTriggerRef} className="bet-button" disabled={!canPreviewBet(pitch) || busy || !targetReady} onClick={onPrepare}>{busy ? <Loader2 className="spin" size={18} /> : <GitPullRequest size={18} />}{!targetReady ? 'Connect GitHub and choose a repository' : pitch.github ? 'Review GitHub update' : 'Review and make the bet'}<ArrowRight size={18} /></button>
     <p className="write-boundary"><ShieldCheck size={15} /> This opens a precise preview. A second confirmation is required for every write.</p>
   </section>;
 }

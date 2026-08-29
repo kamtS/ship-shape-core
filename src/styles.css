@@ -43,7 +43,12 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, a:focus-visib
 .pitch-meta { display: block; margin-top: 5px; font: 400 10px/1 'DM Mono', monospace; color: #89877d; }
 .empty-inbox { border: 1px dashed #cfc7b7; background: rgba(255,255,255,.25); min-height: 100px; border-radius: 12px; display: grid; place-items: center; align-content: center; gap: 9px; color: #77766c; cursor: pointer; }
 .empty-inbox span { font-size: 12px; }
+.storage-note { margin-top: auto; margin-bottom: 4px; padding: 11px 12px; display: flex; gap: 8px; align-items: flex-start; background: #fbf3d9; border: 1px solid #e1d3a5; border-radius: 10px; color: #735f26; }
+.storage-note p { margin: 0; font-size: 10px; line-height: 1.5; }
+.storage-note strong { color: #5c4b1c; }
+.storage-note .icon-button { width: 24px; height: 24px; flex: none; border-color: #e1d3a5; background: transparent; color: inherit; }
 .sidebar-note { margin-top: auto; padding: 14px 11px; display: flex; gap: 9px; color: #77756d; border-top: 1px solid var(--line); }
+.storage-note + .sidebar-note { margin-top: 0; }
 .sidebar-note svg { flex: none; margin-top: 2px; }
 .sidebar-note p { margin: 0; font-size: 11px; line-height: 1.55; }
 .sidebar-note strong { color: #4b4c44; }
@@ -58,6 +63,15 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, a:focus-visib
 .context-bar i { height: 1px; width: 34px; background: #d3cdbf; margin: 0 8px; }
 .stage-pill { margin-left: auto; border: 1px solid #cdc7bb; border-radius: 99px; padding: 6px 10px; font: 500 10px/1 'DM Mono', monospace; text-transform: uppercase; color: #64655c; background: rgba(255,255,255,.4); }
 
+.ladder-rail { width: min(100%, 980px); margin: 0 auto; padding: 26px 56px 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.ladder-step { text-align: left; border: 1px solid #d8d2c6; background: rgba(251,249,244,.55); border-radius: 12px; padding: 12px 14px; cursor: pointer; transition: .15s; }
+.ladder-step:disabled { cursor: default; opacity: .6; }
+.ladder-step:not(:disabled):hover { transform: translateY(-1px); box-shadow: 0 5px 14px rgba(52,47,36,.07); }
+.ladder-step.reached { opacity: 1; border-color: #cbd3b9; background: #f0f3e8; }
+.ladder-step.current { border: 2px solid var(--olive); padding: 11px 13px; opacity: 1; }
+.ladder-step strong { display: block; font: 500 11px/1 'DM Mono', monospace; text-transform: uppercase; letter-spacing: .08em; color: #4c5737; }
+.ladder-step small { display: block; margin-top: 6px; color: var(--muted); font-size: 10px; line-height: 1.45; }
+.ladder-note { grid-column: 1 / -1; text-align: center; color: #8a887f; font-size: 10px; }
 .page { width: min(100%, 980px); margin: 0 auto; padding: 66px 56px 100px; }
 .page.narrow { max-width: 800px; }
 .page-heading { margin-bottom: 34px; }
@@ -198,6 +212,7 @@ input:focus, textarea:focus { border-color: #929c71; box-shadow: 0 0 0 3px rgba(
   .context-bar { padding: 0 14px; }
   .context-bar i { width: 12px; }
   .page { padding: 46px 20px 90px; }
+  .ladder-rail { padding: 18px 20px 0; }
   .decision-grid { grid-template-columns: 1fr; }
   .connection-card, .connection-card.signed-out { grid-template-columns: 1fr; }
   .connection-icon { display: none; }
@@ -217,6 +232,9 @@ input:focus, textarea:focus { border-color: #929c71; box-shadow: 0 0 0 3px rgba(
   .context-bar .stage-pill { grid-column: 1 / -1; justify-self: center; margin: 0; padding: 5px 9px; font-size: 8px; }
   .page-heading h1, .empty-state h1 { font-size: 39px; }
   .sticky-action > span { display: none; }
+  .ladder-rail { grid-template-columns: 1fr; }
+  .ladder-step small { display: none; }
+  .ladder-step.current small { display: block; }
   .sticky-action { justify-content: flex-end; }
   .modal { padding: 18px; }
   .modal-actions { flex-direction: column-reverse; }

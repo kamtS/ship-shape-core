@@ -196,19 +196,21 @@ export function App() {
 
       <div className="workspace">
         <aside className="sidebar">
-          <div className="side-heading">
-            <span>Opportunity inbox</span>
-            <button className="icon-button" onClick={newOpportunity} title="Jot a note"><Plus size={17} /></button>
-          </div>
-          <div className="pitch-list">
-            {pitches.length === 0 ? (
-              <button className="empty-inbox" onClick={newOpportunity}><Inbox size={22} /><span>Jot your first note</span></button>
-            ) : pitches.map((pitch) => (
-              <button key={pitch.id} className={`pitch-row ${pitch.id === selectedId ? 'selected' : ''}`} onClick={() => { setSelectedId(pitch.id); setView(ladderStage(pitch) === 'note' ? 'capture' : 'shape'); }}>
-                <span className="pitch-title">{pitch.title || 'Untitled note'}</span>
-                <span className="pitch-meta">{pitch.github ? `Issue #${pitch.github.number}` : stageMeta[ladderStage(pitch)].label} · {relativeDate(pitch.updatedAt)}</span>
-              </button>
-            ))}
+          <div className="sidebar-section">
+            <div className="side-heading">
+              <span>Opportunity inbox</span>
+              <button className="icon-button" onClick={newOpportunity} title="Jot a note"><Plus size={17} /></button>
+            </div>
+            <div className="pitch-list">
+              {pitches.length === 0 ? (
+                <button className="empty-inbox" onClick={newOpportunity}><Inbox size={22} /><span>Jot your first note</span></button>
+              ) : pitches.map((pitch) => (
+                <button key={pitch.id} className={`pitch-row ${pitch.id === selectedId ? 'selected' : ''}`} onClick={() => { setSelectedId(pitch.id); setView(ladderStage(pitch) === 'note' ? 'capture' : 'shape'); }}>
+                  <span className="pitch-title">{pitch.title || 'Untitled note'}</span>
+                  <span className="pitch-meta">{pitch.github ? `Issue #${pitch.github.number}` : stageMeta[ladderStage(pitch)].label} · {relativeDate(pitch.updatedAt)}</span>
+                </button>
+              ))}
+            </div>
           </div>
           {showStorageNote && (
             <div className="storage-note">

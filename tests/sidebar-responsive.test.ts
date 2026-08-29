@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { chromium, type Browser } from 'playwright';
+import { existsSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 
 const viewports = [
@@ -61,21 +62,31 @@ function fixture(styles: string) {
 }
 
 describe('content-rich responsive sidebar', () => {
-  let browser: Browser;
+  const browserAvailable = existsSync(chromium.executablePath());
+  let browser: Browser | undefined;
   let styles: string;
 
   beforeAll(async () => {
-    browser = await chromium.launch();
     styles = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
+    if (browserAvailable) browser = await chromium.launch();
   });
 
   afterAll(async () => {
     await browser?.close();
   });
 
+  it('declares one scroll surface with normal-flow sections', () => {
+    expect(styles).toMatch(/\.sidebar \{[^}]*overflow-y: auto;[^}]*overflow-x: hidden;/s);
+    expect(styles).toMatch(/\.sidebar-section \{ flex: none; min-width: 0; \}/);
+    expect(styles).toMatch(/\.sidebar-note \{[^}]*flex: none;[^}]*margin-top: 16px;/s);
+    expect(styles).toMatch(/@media \(max-width: 800px\)[\s\S]*\.sidebar[^}]*overflow: visible;/);
+    expect(repositories.match(/data-control="repository-/g)).toHaveLength(6);
+    expect(drafts.match(/data-control="draft-/g)).toHaveLength(4);
+  });
+
   for (const viewport of viewports) {
-    it(`keeps every section reachable without overlap at ${viewport.name}`, async () => {
-      const page = await browser.newPage({ viewport });
+    it.runIf(browserAvailable)(`keeps every section reachable without overlap at ${viewport.name}`, async () => {
+      const page = await browser!.newPage({ viewport });
       await page.setContent(fixture(styles), { waitUntil: 'domcontentloaded' });
       if (process.env.SIDEBAR_SCREENSHOTS) {
         await page.screenshot({ path: `${process.env.SIDEBAR_SCREENSHOTS}/${viewport.name}-top.png` });
@@ -135,8 +146,8 @@ describe('content-rich responsive sidebar', () => {
     });
   }
 
-  it('keeps narrow controls touch-sized and keyboard ordered', async () => {
-    const page = await browser.newPage({ viewport: { width: 320, height: 568 } });
+  it.runIf(browserAvailable)('keeps narrow controls touch-sized and keyboard ordered', async () => {
+    const page = await browser!.newPage({ viewport: { width: 320, height: 568 } });
     await page.setContent(fixture(styles), { waitUntil: 'domcontentloaded' });
     const controls = page.locator('[data-control]');
     expect(await controls.count()).toBe(12);

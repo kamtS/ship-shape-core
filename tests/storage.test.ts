@@ -38,11 +38,19 @@ describe('localStorage persistence', () => {
     const malformedLegacy = { id: 'broken', title: 42, decision: 'undecided' };
     const malformedStaged = { id: 'broken-staged', stage: 'note', title: 42, decision: 'undecided' };
     const malformedDecision = { ...createEmptyPitch(), title: 'Bad decision', decision: 'maybe' };
-    localStorage.setItem(KEY, JSON.stringify([keeper, malformedLegacy, malformedStaged, malformedDecision, legacyKeeper, null]));
+    const malformedSnapshot = { ...createEmptyPitch(), title: 'Fake link', github: { body: 42 } };
+    const nonObjectSnapshot = { ...createEmptyPitch(), title: 'Bool link', github: true };
+    const linkedKeeper: Pitch = { ...createEmptyPitch(), title: 'Properly linked', stage: 'bet', github: {
+      owner: 'demo-workspace', repo: 'ship-shape-sandbox', number: 41, url: 'https://example.test/41',
+      title: 'Properly linked', body: '<!-- ship-shape:v1 pitch:linked-keeper -->', state: 'open',
+      updatedAt: new Date().toISOString(), lastSyncedAt: new Date().toISOString(),
+    } };
+    localStorage.setItem(KEY, JSON.stringify([keeper, malformedLegacy, malformedStaged, malformedDecision, malformedSnapshot, nonObjectSnapshot, legacyKeeper, linkedKeeper, null]));
     const loaded = loadPitches();
-    expect(loaded).toHaveLength(2);
+    expect(loaded).toHaveLength(3);
     expect(loaded[0]).toEqual(keeper);
     expect(loaded[1]).toEqual({ ...legacyKeeper, stage: 'proposal' });
+    expect(loaded[2]).toEqual(linkedKeeper);
   });
 
   it('returns an empty inbox for unreadable or non-array storage without throwing', () => {

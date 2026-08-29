@@ -104,6 +104,17 @@ const PITCH_STRING_FIELDS: Array<keyof Pitch> = [
 
 const DECISIONS: Decision[] = ['undecided', 'bet', 'pass'];
 
+const SNAPSHOT_STRING_FIELDS: Array<keyof GitHubSnapshot> = ['owner', 'repo', 'url', 'title', 'body', 'updatedAt', 'lastSyncedAt'];
+
+function assertValidSnapshot(snapshot: GitHubSnapshot): void {
+  if (typeof snapshot !== 'object' || snapshot === null) throw new TypeError('GitHub snapshot must be an object.');
+  for (const field of SNAPSHOT_STRING_FIELDS) {
+    if (typeof snapshot[field] !== 'string') throw new TypeError(`GitHub snapshot field "${String(field)}" must be a string.`);
+  }
+  if (!Number.isSafeInteger(snapshot.number) || snapshot.number <= 0) throw new TypeError('GitHub snapshot needs a positive issue number.');
+  if (snapshot.state !== 'open' && snapshot.state !== 'closed') throw new TypeError('GitHub snapshot state is not recognised.');
+}
+
 // Validates field types before accepting a stored record—regardless of any
 // stage it claims—so a malformed entry throws here and callers with a
 // non-destructive policy (loadPitches) can skip it instead of admitting a
@@ -114,6 +125,10 @@ export function normalisePitch(pitch: Pitch): Pitch {
     if (typeof pitch[field] !== 'string') throw new TypeError(`Pitch field "${String(field)}" must be a string.`);
   }
   if (!DECISIONS.includes(pitch.decision)) throw new TypeError('Pitch decision is not recognised.');
+  // A malformed snapshot rejects the whole record rather than dropping the
+  // snapshot: silently unlinking would let a later bet create a duplicate
+  // canonical issue, and a coerced snapshot could fake a link.
+  if (pitch.github !== undefined) assertValidSnapshot(pitch.github);
   return LADDER_STAGES.includes(pitch.stage as LadderStage) ? pitch : { ...pitch, stage: legacyStage(pitch) };
 }
 

@@ -178,6 +178,17 @@ describe('bet map model', () => {
     expect(pitch.dependencies).toEqual(canonicalDependencies(edges));
   });
 
+  it('never conflates distinct edges whose fields straddle the dedup delimiter', () => {
+    const tricky = [
+      { pitchId: 'a', reason: 'b\0c' },
+      { pitchId: 'a\0b', reason: 'c' },
+      { pitchId: 'a b', reason: 'c' },
+      { pitchId: 'a', reason: 'b c' },
+    ];
+    expect(canonicalDependencies(tricky)).toHaveLength(4);
+    expect(canonicalDependencies([...tricky, { pitchId: 'a', reason: 'b\0c' }])).toHaveLength(4);
+  });
+
   it('tolerates an empty horizon configuration by falling back to the defaults', () => {
     expect(fallbackHorizonId([])).toBe('later');
     expect(horizonOf(mapPitch('a', 'A', { horizon: 'now' }), [])).toBe('now');

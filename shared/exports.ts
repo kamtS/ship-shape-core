@@ -37,21 +37,37 @@ function displayTitle(pitch: Pitch): string {
   return oneLine(pitch.title) || 'Untitled note';
 }
 
+// Accepts only well-formed http(s) URLs with a real hostname, and none of the
+// characters that could break out of the quoted/parenthesised link contexts.
 function safeHttpUrl(url: string): string | null {
-  return /^https:\/\/[^\s"<>\\]+$/.test(url) || /^http:\/\/[^\s"<>\\]+$/.test(url) ? url : null;
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return null;
+  }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return null;
+  if (!parsed.hostname) return null;
+  return /[\s"<>\\]/.test(url) ? null : url;
 }
 
 // --- Mermaid ---------------------------------------------------------------
 
 // Escape order matters: '#' first (entities introduce new '#'s of our own),
-// then the characters Mermaid or its HTML labels would otherwise interpret.
+// then the characters Mermaid or its HTML labels would otherwise interpret —
+// including backticks and emphasis markers, which Mermaid's markdown-string
+// syntax would render as formatting instead of text.
 function mermaidLabel(text: string): string {
   return oneLine(text)
     .replace(/#/g, '#35;')
     .replace(/&/g, '#38;')
     .replace(/</g, '#lt;')
     .replace(/>/g, '#gt;')
-    .replace(/"/g, '#quot;');
+    .replace(/"/g, '#quot;')
+    .replace(/`/g, '#96;')
+    .replace(/\*/g, '#42;')
+    .replace(/_/g, '#95;')
+    .replace(/~/g, '#126;');
 }
 
 function commentSafe(text: string): string {
@@ -111,8 +127,14 @@ export function renderMermaidMap(pitches: Pitch[], horizons: Horizon[] = DEFAULT
 
 // Backslash-escape everything that can open a Markdown or HTML construct.
 // CommonMark renders a backslash-escaped punctuation character literally.
+// Tildes are escaped for ~~strikethrough~~; the trailing replaces neutralise
+// block syntax when the text starts a paragraph — thematic breaks ('---'),
+// list items ('- x', '+ x', '1. x'), quotes, and setext underlines.
 function markdownText(text: string): string {
-  return oneLine(text).replace(/([\\`*_[\]<>|&#!])/g, '\\$1');
+  return oneLine(text)
+    .replace(/([\\`*_[\]<>|&#!~])/g, '\\$1')
+    .replace(/^(\d+)([.)])/, '$1\\$2')
+    .replace(/^([-+=.])/, '\\$1');
 }
 
 // Obsidian block ids and code spans cannot carry arbitrary characters, so

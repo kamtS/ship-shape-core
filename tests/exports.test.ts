@@ -98,19 +98,29 @@ describe('mermaid export', () => {
     const dependent = betAt('ffff-2', 'Dependent', '2026-01-02T00:00:00.000Z', {
       github: undefined, dependencies: [{ pitchId: 'eeee-1', reason: 'needs "quotes" | pipes\nand lines' }],
     });
-    const output = renderMermaidMap([evil, dependent]);
+    const markdownish = betAt('gggg-3', '`**bold**` _em_ ~~del~~', '2026-01-03T00:00:00.000Z', { github: undefined });
+    const output = renderMermaidMap([evil, dependent, markdownish]);
     expect(output).toContain('n1["Break#quot;] --#gt; out #38; #lt;b#gt;bold#lt;/b#gt; #35;x"]');
+    expect(output).toContain('n3["#96;#42;#42;bold#42;#42;#96; #95;em#95; #126;#126;del#126;#126;"]');
     expect(output).toContain('n1 -->|"needs #quot;quotes#quot; | pipes and lines"| n2');
-    expect(output).not.toContain('<b>');
-    expect(renderMermaidMap([evil, dependent])).toBe(output);
+    // After removing our own entity escapes, no markup metacharacter may
+    // survive inside any quoted label.
+    for (const quoted of output.match(/"[^"\n]*"/g) ?? []) {
+      expect(quoted.replace(/#(35|38|96|42|95|126);|#quot;|#lt;|#gt;/g, '')).not.toMatch(/[`*_~<>&#\\]/);
+    }
+    expect(renderMermaidMap([evil, dependent, markdownish])).toBe(output);
   });
 
-  it('withholds click directives for non-http(s) snapshot URLs', () => {
-    const tampered = betAt('aaaa-1', 'Tampered', '2026-01-01T00:00:00.000Z');
-    (tampered.github as { url: string }).url = 'javascript:alert(1)';
-    const output = renderMermaidMap([tampered]);
-    expect(output).not.toContain('click');
-    expect(output).not.toContain('javascript:');
+  it('withholds click directives for malformed or non-http(s) snapshot URLs', () => {
+    for (const url of ['javascript:alert(1)', 'https://?', 'https://', 'ftp://example.test/x', 'not a url', 'https://bad"quote.test/x']) {
+      const tampered = betAt('aaaa-1', 'Tampered', '2026-01-01T00:00:00.000Z');
+      (tampered.github as { url: string }).url = url;
+      const output = renderMermaidMap([tampered]);
+      expect(output).not.toContain('click');
+      expect(output).not.toContain('javascript:');
+    }
+    const sound = betAt('aaaa-1', 'Sound', '2026-01-01T00:00:00.000Z');
+    expect(renderMermaidMap([sound])).toContain('click n1 "https://example.test/aaaa-1" _blank');
   });
 
   it('surfaces deleted and note-demoted dependency targets instead of hiding them', () => {
@@ -167,12 +177,32 @@ describe('markdown export', () => {
     expect(renderMarkdownMap([evil, dependent])).toBe(output);
   });
 
-  it('withholds GitHub links for non-http(s) snapshot URLs', () => {
-    const tampered = betAt('aaaa-1', 'Tampered', '2026-01-01T00:00:00.000Z');
-    (tampered.github as { url: string }).url = 'javascript:alert(1)';
-    const output = renderMarkdownMap([tampered]);
-    expect(output).toContain('- GitHub: demo/sandbox\\#7 (link withheld — stored URL is not a plain http(s) URL)');
-    expect(output).not.toContain('javascript:');
+  it('neutralises block-level markdown in interpolated content', () => {
+    const evil = betAt('eeee-1', '1. Numbered start', '2026-01-01T00:00:00.000Z', {
+      github: undefined, problem: '--- not a thematic break', appetite: '+ not a list item',
+    });
+    const other = betAt('ffff-2', '- dashed title', '2026-01-02T00:00:00.000Z', {
+      github: undefined, problem: '~~struck~~ still here', dependencies: [{ pitchId: 'eeee-1', reason: '> not a quote' }],
+    });
+    const output = renderMarkdownMap([evil, other]);
+    expect(output).toContain('### 1\\. Numbered start');
+    expect(output).toContain('\\--- not a thematic break');
+    expect(output).toContain('“\\+ not a list item”');
+    expect(output).toContain('### \\- dashed title');
+    expect(output).toContain('\\~\\~struck\\~\\~ still here');
+    expect(output).toContain('— \\> not a quote');
+    expect(output).not.toMatch(/^---/m);
+    expect(renderMarkdownMap([evil, other])).toBe(output);
+  });
+
+  it('withholds GitHub links for malformed or non-http(s) snapshot URLs', () => {
+    for (const url of ['javascript:alert(1)', 'https://?', 'https://', 'ftp://example.test/x', 'not a url']) {
+      const tampered = betAt('aaaa-1', 'Tampered', '2026-01-01T00:00:00.000Z');
+      (tampered.github as { url: string }).url = url;
+      const output = renderMarkdownMap([tampered]);
+      expect(output).toContain('- GitHub: demo/sandbox\\#7 (link withheld — stored URL is not a plain http(s) URL)');
+      expect(output).not.toContain('](');
+    }
   });
 
   it('sanitises wiki-link aliases so Obsidian links stay parseable', () => {

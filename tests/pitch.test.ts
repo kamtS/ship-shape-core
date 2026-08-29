@@ -1,9 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import {
+  annotatedDependencies,
+  canonicalDependencies,
   canPreviewBet,
   createEmptyPitch,
   DEFAULT_HORIZONS,
   dependencyCycleError,
+  effectiveHorizons,
+  fallbackHorizonId,
   horizonOf,
   isBetReady,
   ladderStage,
@@ -140,11 +144,65 @@ describe('bet map model', () => {
     const legacy = normalisePitch(legacyFields as Pitch);
     expect(legacy.horizon).toBe('later');
     expect(legacy.dependencies).toEqual([]);
-    const mangled = normalisePitch({ ...completePitch(), appetiteBand: 'gigantic', confidence: 'certain', horizon: '', dependencies: [{ pitchId: 42 }, null, { pitchId: 'other', reason: 7 }] } as unknown as Pitch);
+    const mangled = normalisePitch({ ...completePitch(), appetiteBand: 42, confidence: { level: 'high' }, horizon: '', dependencies: [{ pitchId: 42 }, null, { pitchId: 'other', reason: 7 }] } as unknown as Pitch);
     expect(mangled.appetiteBand).toBeUndefined();
     expect(mangled.confidence).toBeUndefined();
     expect(mangled.horizon).toBe('later');
     expect(mangled.dependencies).toEqual([{ pitchId: 'other', reason: '' }]);
+  });
+
+  it('preserves unknown band and confidence strings from newer app versions', () => {
+    const future = normalisePitch({ ...completePitch(), appetiteBand: 'gigantic', confidence: 'certain' } as Pitch);
+    expect(future.appetiteBand).toBe('gigantic');
+    expect(future.confidence).toBe('certain');
+    const roundTripped = normalisePitch(JSON.parse(JSON.stringify(future)) as Pitch);
+    expect(roundTripped.appetiteBand).toBe('gigantic');
+    expect(roundTripped.confidence).toBe('certain');
+  });
+
+  it('canonically sorts and deduplicates dependency edges', () => {
+    const edges = [
+      { pitchId: 'b', reason: 'later' },
+      { pitchId: 'a', reason: 'z-reason' },
+      { pitchId: 'b', reason: 'later' },
+      { pitchId: 'a', reason: 'a-reason' },
+    ];
+    expect(canonicalDependencies(edges)).toEqual([
+      { pitchId: 'a', reason: 'a-reason' },
+      { pitchId: 'a', reason: 'z-reason' },
+      { pitchId: 'b', reason: 'later' },
+    ]);
+    const pitch = normalisePitch({ ...completePitch(), dependencies: [...edges] } as Pitch);
+    expect(pitch.dependencies).toEqual(canonicalDependencies(edges));
+  });
+
+  it('tolerates an empty horizon configuration by falling back to the defaults', () => {
+    expect(fallbackHorizonId([])).toBe('later');
+    expect(horizonOf(mapPitch('a', 'A', { horizon: 'now' }), [])).toBe('now');
+    expect(horizonOf(mapPitch('a', 'A', { horizon: 'someday' }), [])).toBe('later');
+    expect(effectiveHorizons([])).toEqual(DEFAULT_HORIZONS);
+    expect(effectiveHorizons()).toEqual(DEFAULT_HORIZONS);
+  });
+
+  it('annotates every stored edge with an explicit status', () => {
+    const a = mapPitch('a', 'Alpha', {
+      dependencies: [
+        { pitchId: 'gone', reason: 'was deleted' },
+        { pitchId: 'b', reason: 'still here' },
+        { pitchId: 'c', reason: 'demoted' },
+        { pitchId: 'a', reason: 'self' },
+      ],
+    });
+    const b = mapPitch('b', 'Beta');
+    const c = mapPitch('c', 'Gamma', { stage: 'note', problem: '' });
+    const annotated = annotatedDependencies(a, [a, b, c]);
+    expect(annotated.map((edge) => [edge.pitchId, edge.status])).toEqual([
+      ['b', 'ok'],
+      ['c', 'note'],
+      ['gone', 'missing'],
+    ]);
+    expect(annotated[0].target?.title).toBe('Beta');
+    expect(annotated[2].target).toBeUndefined();
   });
 
   it('round-trips structured bet-map fields through the JSON contract', () => {

@@ -31,8 +31,6 @@ import {
   isBetReady,
   LADDER_STAGES,
   ladderStage,
-  type AppetiteBand,
-  type Confidence,
   type GitHubSnapshot,
   type LadderStage,
   type Pitch,
@@ -419,13 +417,13 @@ function MapPlacement({ pitch, pitches, update }: { pitch: Pitch; pitches: Pitch
         </select>
       </label>
       <label><span>Appetite band</span>
-        <select value={pitch.appetiteBand ?? ''} onChange={(e) => update({ appetiteBand: (e.target.value || undefined) as AppetiteBand | undefined })}>
+        <select value={pitch.appetiteBand ?? ''} onChange={(e) => update({ appetiteBand: e.target.value || undefined })}>
           <option value="">Not set</option>
           {APPETITE_BANDS.map((band) => <option key={band} value={band}>{APPETITE_BAND_LABELS[band]}</option>)}
         </select>
       </label>
       <label><span>Confidence</span>
-        <select value={pitch.confidence ?? ''} onChange={(e) => update({ confidence: (e.target.value || undefined) as Confidence | undefined })}>
+        <select value={pitch.confidence ?? ''} onChange={(e) => update({ confidence: e.target.value || undefined })}>
           <option value="">Not set</option>
           {CONFIDENCE_LEVELS.map((level) => <option key={level} value={level}>{level[0].toUpperCase()}{level.slice(1)}</option>)}
         </select>

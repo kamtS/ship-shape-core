@@ -1,5 +1,7 @@
 import {
   APPETITE_BAND_LABELS,
+  appetiteBandOf,
+  confidenceOf,
   DEFAULT_HORIZONS,
   horizonOf,
   ladderStage,
@@ -95,9 +97,11 @@ export function renderMarkdownMap(pitches: Pitch[], horizons: Horizon[] = DEFAUL
     for (const pitch of members) {
       const facts = [`- Stage: ${titleCase(ladderStage(pitch))}`];
       const appetiteText = oneLine(pitch.appetite);
-      const band = pitch.appetiteBand ? APPETITE_BAND_LABELS[pitch.appetiteBand] : '';
+      const knownBand = appetiteBandOf(pitch);
+      const band = knownBand ? APPETITE_BAND_LABELS[knownBand] : oneLine(pitch.appetiteBand ?? '');
       facts.push(`- Appetite: ${[band, appetiteText && `“${appetiteText}”`].filter(Boolean).join(' — ') || 'Not set'}`);
-      facts.push(`- Confidence: ${pitch.confidence ? titleCase(pitch.confidence) : 'Not set'}`);
+      const confidence = confidenceOf(pitch);
+      facts.push(`- Confidence: ${confidence ? titleCase(confidence) : oneLine(pitch.confidence ?? '') || 'Not set'}`);
       if (pitch.github) facts.push(`- GitHub: [${pitch.github.owner}/${pitch.github.repo}#${pitch.github.number}](${pitch.github.url})`);
       for (const edge of resolvableDependencies(pitch, mapped)) {
         const target = byId.get(edge.pitchId) as Pitch;

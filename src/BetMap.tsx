@@ -3,6 +3,8 @@ import { Copy, Download, GitPullRequest, Map as MapIcon } from 'lucide-react';
 import { mappablePitches, renderMarkdownMap, renderMermaidMap } from '../shared/exports';
 import {
   APPETITE_BAND_LABELS,
+  appetiteBandOf,
+  confidenceOf,
   DEFAULT_HORIZONS,
   horizonOf,
   ladderStage,
@@ -144,6 +146,8 @@ export function BetMap({ pitches, horizons = DEFAULT_HORIZONS, onOpen }: { pitch
                 {members.length === 0 && <div className="betmap-column-empty">Nothing here yet.</div>}
                 {members.map((pitch) => {
                   const stage = ladderStage(pitch);
+                  const band = appetiteBandOf(pitch);
+                  const confidence = confidenceOf(pitch);
                   const dependencies = resolvableDependencies(pitch, mapped);
                   return <button
                     key={pitch.id}
@@ -153,10 +157,10 @@ export function BetMap({ pitches, horizons = DEFAULT_HORIZONS, onOpen }: { pitch
                   >
                     <span className="betmap-card-top">
                       <span className={`betmap-stage ${stage}`}>{pitch.github ? <><GitPullRequest size={11} /> Bet · #{pitch.github.number}</> : stage === 'bet' ? 'Bet' : 'Proposal'}</span>
-                      {pitch.confidence && <span className={`betmap-confidence ${pitch.confidence}`}>{pitch.confidence} confidence</span>}
+                      {confidence && <span className={`betmap-confidence ${confidence}`}>{confidence} confidence</span>}
                     </span>
                     <strong>{title(pitch)}</strong>
-                    <small className="betmap-appetite">{pitch.appetiteBand ? APPETITE_BAND_LABELS[pitch.appetiteBand] : 'Appetite band unset'}{pitch.appetite.trim() ? ` · ${pitch.appetite.trim()}` : ''}</small>
+                    <small className="betmap-appetite">{band ? APPETITE_BAND_LABELS[band] : 'Appetite band unset'}{pitch.appetite.trim() ? ` · ${pitch.appetite.trim()}` : ''}</small>
                     {dependencies.length > 0 && <span className="betmap-deps">
                       {dependencies.map((edge) => <small key={edge.pitchId}>↳ needs {title(byId.get(edge.pitchId) as Pitch)}{edge.reason.trim() ? ` — ${edge.reason.trim()}` : ''}</small>)}
                     </span>}

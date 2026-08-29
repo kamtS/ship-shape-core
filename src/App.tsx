@@ -64,7 +64,10 @@ function relativeDate(iso: string) {
 export function App() {
   const [pitches, setPitches] = useState<Pitch[]>(() => loadPitches());
   const [selectedId, setSelectedId] = useState<string | null>(() => loadPitches()[0]?.id ?? null);
-  const [view, setView] = useState<View>(() => loadPitches().length ? 'shape' : 'capture');
+  const [view, setView] = useState<View>(() => {
+    const first = loadPitches()[0];
+    return first && ladderStage(first) !== 'note' ? 'shape' : 'capture';
+  });
   const [config, setConfig] = useState<AppConfig>({ mode: 'demo', csrfToken: '', owner: 'demo-workspace', repo: 'ship-shape-sandbox', auth: { configured: false, signedIn: false } });
   const [repositories, setRepositories] = useState<RepositoryChoice[]>([]);
   const [preview, setPreview] = useState<IssuePreview | null>(null);
@@ -237,7 +240,7 @@ export function App() {
               <LadderRail pitch={selected} update={update} />
 
               {view === 'capture' && <Capture pitch={selected} update={update} onContinue={() => { if (ladderStage(selected) === 'note') update({ stage: 'proposal' }); setView('shape'); }} />}
-              {view === 'shape' && <Shape pitch={selected} update={update} completed={completed} onDecide={() => setView('decide')} />}
+              {view === 'shape' && <Shape key={selected.id} pitch={selected} update={update} completed={completed} onDecide={() => setView('decide')} />}
               {view === 'decide' && (
                 <Decide
                   pitch={selected}
@@ -309,11 +312,21 @@ function Capture({ pitch, update, onContinue }: { pitch: Pitch; update: (patch: 
 
 function Shape({ pitch, update, completed, onDecide }: { pitch: Pitch; update: (patch: Partial<Pitch>) => void; completed: number; onDecide: () => void }) {
   const nextField = fieldMeta.find((field) => !pitch[field.key].trim());
+  // Shape is keyed by pitch.id, so sparring state can never leak between
+  // drafts; the ref additionally drops in-flight suggestions that resolve
+  // after this pitch's instance unmounts.
   const [sparringOn, setSparringOn] = useState(false);
   const [suggestions, setSuggestions] = useState<Partial<Record<PitchSectionKey, string>>>({});
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; };
+  }, []);
 
   function spar(section: PitchSectionKey) {
-    stubSparringPartner.suggest(pitch, section).then((text) => setSuggestions((current) => ({ ...current, [section]: text }))).catch(() => undefined);
+    stubSparringPartner.suggest(pitch, section).then((text) => {
+      if (mounted.current) setSuggestions((current) => ({ ...current, [section]: text }));
+    }).catch(() => undefined);
   }
   function dismissSuggestion(section: PitchSectionKey) {
     setSuggestions(({ [section]: _dropped, ...rest }) => rest);

@@ -77,6 +77,9 @@ describe('content-rich responsive sidebar', () => {
     it(`keeps every section reachable without overlap at ${viewport.name}`, async () => {
       const page = await browser.newPage({ viewport });
       await page.setContent(fixture(styles), { waitUntil: 'domcontentloaded' });
+      if (process.env.SIDEBAR_SCREENSHOTS) {
+        await page.screenshot({ path: `${process.env.SIDEBAR_SCREENSHOTS}/${viewport.name}-top.png` });
+      }
 
       const layout = await page.evaluate(() => {
         const sidebar = document.querySelector<HTMLElement>('.sidebar')!;
@@ -122,6 +125,10 @@ describe('content-rich responsive sidebar', () => {
           return target.top >= -1 && target.bottom <= window.innerHeight + 1;
         });
         expect(visible).toBe(true);
+      }
+
+      if (process.env.SIDEBAR_SCREENSHOTS) {
+        await page.screenshot({ path: `${process.env.SIDEBAR_SCREENSHOTS}/${viewport.name}-reachable.png` });
       }
 
       await page.close();

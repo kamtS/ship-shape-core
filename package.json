@@ -9,6 +9,7 @@
     "build": "npm run typecheck && vite build && tsc -p tsconfig.server.json",
     "start": "node dist-server/server/index.js",
     "test": "vitest run tests",
+    "test:responsive": "playwright install chromium && vitest run tests/sidebar-responsive.test.ts",
     "check": "npm run test && npm run build"
   },
   "dependencies": {
@@ -33,6 +34,7 @@
     "@types/react-dom": "latest",
     "@types/supertest": "latest",
     "concurrently": "latest",
+    "playwright": "^1.62.1",
     "supertest": "latest",
     "tsx": "latest",
     "typescript": "latest",

@@ -174,19 +174,21 @@ export function App() {
 
       <div className="workspace">
         <aside className="sidebar">
-          <div className="side-heading">
-            <span>Opportunity inbox</span>
-            <button className="icon-button" onClick={newOpportunity} title="Capture opportunity"><Plus size={17} /></button>
-          </div>
-          <div className="pitch-list">
-            {pitches.length === 0 ? (
-              <button className="empty-inbox" onClick={newOpportunity}><Inbox size={22} /><span>Capture your first signal</span></button>
-            ) : pitches.map((pitch) => (
-              <button key={pitch.id} className={`pitch-row ${pitch.id === selectedId ? 'selected' : ''}`} onClick={() => { setSelectedId(pitch.id); setView(pitch.problem ? 'shape' : 'capture'); }}>
-                <span className="pitch-title">{pitch.title || 'Untitled opportunity'}</span>
-                <span className="pitch-meta">{pitch.github ? `Issue #${pitch.github.number}` : pitch.problem ? 'Shaping' : 'Captured'} · {relativeDate(pitch.updatedAt)}</span>
-              </button>
-            ))}
+          <div className="sidebar-section">
+            <div className="side-heading">
+              <span>Opportunity inbox</span>
+              <button className="icon-button" onClick={newOpportunity} title="Capture opportunity"><Plus size={17} /></button>
+            </div>
+            <div className="pitch-list">
+              {pitches.length === 0 ? (
+                <button className="empty-inbox" onClick={newOpportunity}><Inbox size={22} /><span>Capture your first signal</span></button>
+              ) : pitches.map((pitch) => (
+                <button key={pitch.id} className={`pitch-row ${pitch.id === selectedId ? 'selected' : ''}`} onClick={() => { setSelectedId(pitch.id); setView(pitch.problem ? 'shape' : 'capture'); }}>
+                  <span className="pitch-title">{pitch.title || 'Untitled opportunity'}</span>
+                  <span className="pitch-meta">{pitch.github ? `Issue #${pitch.github.number}` : pitch.problem ? 'Shaping' : 'Captured'} · {relativeDate(pitch.updatedAt)}</span>
+                </button>
+              ))}
+            </div>
           </div>
           <div className="sidebar-note">
             <ShieldCheck size={16} />

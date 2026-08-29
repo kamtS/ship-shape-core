@@ -1,5 +1,9 @@
 export type Decision = 'undecided' | 'bet' | 'pass';
 
+export type LadderStage = 'note' | 'proposal' | 'bet';
+
+export const LADDER_STAGES: LadderStage[] = ['note', 'proposal', 'bet'];
+
 export interface GitHubSnapshot {
   owner: string;
   repo: string;
@@ -25,6 +29,7 @@ export interface Pitch {
   risks: string;
   decision: Decision;
   decisionRationale: string;
+  stage?: LadderStage;
   createdAt: string;
   updatedAt: string;
   github?: GitHubSnapshot;
@@ -55,6 +60,29 @@ export function missingBetFields(pitch: Pitch): PitchSectionKey[] {
 
 export function isBetReady(pitch: Pitch): boolean {
   return Boolean(pitch.title.trim()) && missingBetFields(pitch).length === 0;
+}
+
+export function shapedSectionCount(pitch: Pitch): number {
+  return REQUIRED_FOR_BET.length - missingBetFields(pitch).length;
+}
+
+function legacyStage(pitch: Pitch): LadderStage {
+  if (pitch.github || (pitch.decision === 'bet' && isBetReady(pitch))) return 'bet';
+  return shapedSectionCount(pitch) > 0 ? 'proposal' : 'note';
+}
+
+export function ladderStage(pitch: Pitch): LadderStage {
+  const claimed = pitch.stage ?? legacyStage(pitch);
+  if (claimed === 'bet' && !pitch.github && !(pitch.decision === 'bet' && isBetReady(pitch))) return 'proposal';
+  return claimed;
+}
+
+export function canPreviewBet(pitch: Pitch): boolean {
+  return ladderStage(pitch) === 'bet' && pitch.decision === 'bet' && isBetReady(pitch);
+}
+
+export function normalisePitch(pitch: Pitch): Pitch {
+  return LADDER_STAGES.includes(pitch.stage as LadderStage) ? pitch : { ...pitch, stage: legacyStage(pitch) };
 }
 
 function section(title: string, content: string): string {
@@ -91,6 +119,7 @@ export function createEmptyPitch(): Pitch {
     risks: '',
     decision: 'undecided',
     decisionRationale: '',
+    stage: 'note',
     createdAt: now,
     updatedAt: now,
   };

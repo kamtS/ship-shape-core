@@ -1,11 +1,11 @@
-import type { Pitch } from '../shared/pitch';
+import { normalisePitch, type Pitch } from '../shared/pitch';
 
 const KEY = 'ship-shape:pitches:v1';
 
 export function loadPitches(): Pitch[] {
   try {
     const value = localStorage.getItem(KEY);
-    return value ? JSON.parse(value) as Pitch[] : [];
+    return value ? (JSON.parse(value) as Pitch[]).map(normalisePitch) : [];
   } catch {
     return [];
   }

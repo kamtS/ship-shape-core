@@ -20,14 +20,17 @@ import {
   X,
 } from 'lucide-react';
 import {
+  annotatedDependencies,
   APPETITE_BAND_LABELS,
   APPETITE_BANDS,
   canPreviewBet,
   CONFIDENCE_LEVELS,
   createEmptyPitch,
   DEFAULT_HORIZONS,
+  dependencyCandidates,
   dependencyCycleError,
   horizonOf,
+  withoutDependency,
   isBetReady,
   LADDER_STAGES,
   ladderStage,
@@ -395,15 +398,14 @@ function MapPlacement({ pitch, pitches, update }: { pitch: Pitch; pitches: Pitch
   const [targetId, setTargetId] = useState('');
   const [reason, setReason] = useState('');
   const [depError, setDepError] = useState<string | null>(null);
-  const dependencies = pitch.dependencies ?? [];
-  const byId = new Map(pitches.map((item) => [item.id, item]));
-  const candidates = pitches.filter((item) => item.id !== pitch.id && ladderStage(item) !== 'note' && !dependencies.some((edge) => edge.pitchId === item.id));
+  const dependencies = annotatedDependencies(pitch, pitches);
+  const candidates = dependencyCandidates(pitch, pitches);
 
   function addDependency() {
     if (!targetId || !reason.trim()) return;
     const error = dependencyCycleError(pitches, pitch.id, targetId);
     if (error) { setDepError(error); return; }
-    update({ dependencies: [...dependencies, { pitchId: targetId, reason: reason.trim() }] });
+    update({ dependencies: [...(pitch.dependencies ?? []), { pitchId: targetId, reason: reason.trim() }] });
     setTargetId(''); setReason(''); setDepError(null);
   }
 
@@ -431,10 +433,11 @@ function MapPlacement({ pitch, pitches, update }: { pitch: Pitch; pitches: Pitch
     </div>
     {dependencies.length > 0 && <ul className="placement-deps">
       {dependencies.map((edge) => {
-        const target = byId.get(edge.pitchId);
-        return <li key={edge.pitchId}>
-          <span><strong>Needs {target ? target.title.trim() || 'Untitled note' : 'a pitch no longer in this workspace'}</strong>{edge.reason ? ` — ${edge.reason}` : ''}{!target && ' · ignored by the map and exports'}</span>
-          <button className="icon-button" aria-label={`Remove dependency on ${target?.title.trim() || 'removed pitch'}`} onClick={() => update({ dependencies: dependencies.filter((item) => item.pitchId !== edge.pitchId) })}><X size={13} /></button>
+        const name = edge.target ? edge.target.title.trim() || 'Untitled note' : 'a pitch no longer in this workspace';
+        const status = edge.status === 'missing' ? ' · shown as unresolved on the map and in exports' : edge.status === 'note' ? ' · still a note — shown as unresolved until it becomes a proposal' : '';
+        return <li key={`${edge.pitchId}::${edge.reason}`} className={edge.status === 'ok' ? '' : 'unresolved'}>
+          <span><strong>Needs {name}</strong>{edge.reason ? ` — ${edge.reason}` : ''}{status}</span>
+          <button className="icon-button" aria-label={`Remove dependency on ${edge.target?.title.trim() || 'removed pitch'}`} onClick={() => update({ dependencies: withoutDependency(pitch.dependencies ?? [], edge) })}><X size={13} /></button>
         </li>;
       })}
     </ul>}

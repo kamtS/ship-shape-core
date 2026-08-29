@@ -2,13 +2,15 @@ import { useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Copy, Download, GitPullRequest, Map as MapIcon } from 'lucide-react';
 import { mappablePitches, renderMarkdownMap, renderMermaidMap } from '../shared/exports';
 import {
+  annotatedDependencies,
   APPETITE_BAND_LABELS,
   appetiteBandOf,
   confidenceOf,
   DEFAULT_HORIZONS,
+  effectiveHorizons,
   horizonOf,
   ladderStage,
-  resolvableDependencies,
+  type AnnotatedDependency,
   type Horizon,
   type Pitch,
 } from '../shared/pitch';
@@ -27,6 +29,13 @@ function title(pitch: Pitch): string {
   return pitch.title.trim() || 'Untitled note';
 }
 
+function dependencyText(edge: AnnotatedDependency): string {
+  const reason = edge.reason.trim() ? ` — ${edge.reason.trim()}` : '';
+  if (edge.status === 'missing') return `↳ needs a pitch no longer in this workspace${reason}`;
+  if (edge.status === 'note') return `↳ needs ${title(edge.target as Pitch)} (still a note — not on this map)${reason}`;
+  return `↳ needs ${title(edge.target as Pitch)}${reason}`;
+}
+
 function downloadFile(text: string, filename: string, type: string) {
   const url = URL.createObjectURL(new Blob([text], { type }));
   const anchor = document.createElement('a');
@@ -37,11 +46,14 @@ function downloadFile(text: string, filename: string, type: string) {
 }
 
 export function BetMap({ pitches, horizons = DEFAULT_HORIZONS, onOpen }: { pitches: Pitch[]; horizons?: Horizon[]; onOpen: (id: string) => void }) {
+  const usableHorizons = useMemo(() => effectiveHorizons(horizons), [horizons]);
   const mapped = useMemo(() => mappablePitches(pitches), [pitches]);
   const byId = useMemo(() => new Map(mapped.map((pitch) => [pitch.id, pitch])), [mapped]);
   const edges = useMemo(
-    () => mapped.flatMap((pitch) => resolvableDependencies(pitch, mapped).map((edge) => ({ from: edge.pitchId, to: pitch.id, reason: edge.reason.trim() }))),
-    [mapped],
+    () => mapped.flatMap((pitch) => annotatedDependencies(pitch, pitches)
+      .filter((edge) => edge.status === 'ok')
+      .map((edge) => ({ from: edge.pitchId, to: pitch.id, reason: edge.reason.trim() }))),
+    [mapped, pitches],
   );
 
   const boardRef = useRef<HTMLDivElement>(null);
@@ -78,7 +90,7 @@ export function BetMap({ pitches, horizons = DEFAULT_HORIZONS, onOpen }: { pitch
           d = `M ${from.midX} ${from.top} C ${from.midX} ${from.top - 34}, ${to.midX} ${to.bottom + 34}, ${to.midX} ${to.bottom + 5}`;
         }
         next.push({
-          key: `${edge.from}->${edge.to}`,
+          key: `${edge.from}->${edge.to}::${edge.reason}`,
           d,
           fromTitle: title(byId.get(edge.from) as Pitch),
           toTitle: title(byId.get(edge.to) as Pitch),
@@ -138,9 +150,9 @@ export function BetMap({ pitches, horizons = DEFAULT_HORIZONS, onOpen }: { pitch
     ) : (
       <div className="betmap-scroll">
         <div className="betmap-board" ref={boardRef}>
-          <div className="betmap-columns" style={{ ['--betmap-cols' as string]: horizons.length }}>
-            {horizons.map((horizon) => {
-              const members = mapped.filter((pitch) => horizonOf(pitch, horizons) === horizon.id);
+          <div className="betmap-columns" style={{ ['--betmap-cols' as string]: usableHorizons.length }}>
+            {usableHorizons.map((horizon) => {
+              const members = mapped.filter((pitch) => horizonOf(pitch, usableHorizons) === horizon.id);
               return <div className="betmap-column" key={horizon.id}>
                 <div className="betmap-column-head"><strong>{horizon.label}</strong><small>{horizon.hint}</small></div>
                 {members.length === 0 && <div className="betmap-column-empty">Nothing here yet.</div>}
@@ -148,7 +160,7 @@ export function BetMap({ pitches, horizons = DEFAULT_HORIZONS, onOpen }: { pitch
                   const stage = ladderStage(pitch);
                   const band = appetiteBandOf(pitch);
                   const confidence = confidenceOf(pitch);
-                  const dependencies = resolvableDependencies(pitch, mapped);
+                  const dependencies = annotatedDependencies(pitch, pitches);
                   return <button
                     key={pitch.id}
                     className={`betmap-card ${stage === 'bet' ? 'bet' : 'proposal'}`}
@@ -162,7 +174,7 @@ export function BetMap({ pitches, horizons = DEFAULT_HORIZONS, onOpen }: { pitch
                     <strong>{title(pitch)}</strong>
                     <small className="betmap-appetite">{band ? APPETITE_BAND_LABELS[band] : 'Appetite band unset'}{pitch.appetite.trim() ? ` · ${pitch.appetite.trim()}` : ''}</small>
                     {dependencies.length > 0 && <span className="betmap-deps">
-                      {dependencies.map((edge) => <small key={edge.pitchId}>↳ needs {title(byId.get(edge.pitchId) as Pitch)}{edge.reason.trim() ? ` — ${edge.reason.trim()}` : ''}</small>)}
+                      {dependencies.map((edge) => <small key={`${edge.pitchId}::${edge.reason}`} className={edge.status === 'ok' ? '' : 'unresolved'}>{dependencyText(edge)}</small>)}
                     </span>}
                   </button>;
                 })}

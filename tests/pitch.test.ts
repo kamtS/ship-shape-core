@@ -5,6 +5,7 @@ import {
   canPreviewBet,
   createEmptyPitch,
   DEFAULT_HORIZONS,
+  dependencyCandidates,
   dependencyCycleError,
   effectiveHorizons,
   fallbackHorizonId,
@@ -15,6 +16,7 @@ import {
   renderIssueBody,
   resolvableDependencies,
   shapedSectionCount,
+  withoutDependency,
   type Pitch,
 } from '../shared/pitch.js';
 
@@ -229,6 +231,27 @@ describe('bet map model', () => {
     expect(dependencyCycleError(pitches, 'c', 'b')).toContain('loop');
     expect(dependencyCycleError(pitches, 'a', 'c')).toBeNull();
     expect(dependencyCycleError(pitches, 'b', 'a')).toContain('“Beta”');
+  });
+
+  it('removes exactly one edge, matching target and reason', () => {
+    const edges = [
+      { pitchId: 'a', reason: 'first' },
+      { pitchId: 'a', reason: 'second' },
+      { pitchId: 'b', reason: 'first' },
+    ];
+    expect(withoutDependency(edges, { pitchId: 'a', reason: 'second' })).toEqual([
+      { pitchId: 'a', reason: 'first' },
+      { pitchId: 'b', reason: 'first' },
+    ]);
+    expect(withoutDependency(edges, { pitchId: 'missing', reason: 'first' })).toEqual(edges);
+  });
+
+  it('offers only proposals and bets that are not already dependencies as candidates', () => {
+    const self = mapPitch('self', 'Self', { dependencies: [{ pitchId: 'taken', reason: 'already linked' }] });
+    const taken = mapPitch('taken', 'Taken');
+    const note = mapPitch('note', 'Still a note', { stage: 'note', problem: '' });
+    const open = mapPitch('open', 'Open target');
+    expect(dependencyCandidates(self, [self, taken, note, open]).map((item) => item.id)).toEqual(['open']);
   });
 
   it('ignores dependency edges whose target has been deleted', () => {

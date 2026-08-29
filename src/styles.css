@@ -249,6 +249,7 @@ input:focus, textarea:focus { border-color: #929c71; box-shadow: 0 0 0 3px rgba(
 .betmap-appetite { color: var(--muted); font-size: 10px; line-height: 1.4; }
 .betmap-deps { display: grid; gap: 3px; border-top: 1px dashed #ddd7cb; padding-top: 7px; }
 .betmap-deps small { color: #77766d; font-size: 9px; line-height: 1.4; }
+.betmap-deps small.unresolved { color: #a4643f; }
 .betmap-edges { position: absolute; inset: 0; pointer-events: none; overflow: visible; }
 .betmap-edge { fill: none; stroke: #596340; stroke-width: 1.6; opacity: .55; }
 .betmap-edge.active, .betmap-edge-hit:hover + .betmap-edge { opacity: 1; stroke-width: 2.4; }
@@ -264,6 +265,7 @@ input:focus, textarea:focus { border-color: #929c71; box-shadow: 0 0 0 3px rgba(
 .placement-grid label > span { font-size: 10px; }
 .placement-deps { list-style: none; margin: 14px 0 0; padding: 0; display: grid; gap: 7px; }
 .placement-deps li { display: flex; justify-content: space-between; align-items: center; gap: 10px; border: 1px dashed #d5cec0; border-radius: 9px; padding: 8px 10px; font-size: 11px; color: #5b5c52; }
+.placement-deps li.unresolved { border-color: #dcae94; background: #faf0e9; color: #7d503a; }
 .placement-deps strong { font-weight: 650; color: var(--ink); }
 .placement-deps .icon-button { width: 25px; height: 25px; flex: none; }
 .placement-add { margin-top: 14px; display: grid; grid-template-columns: minmax(140px, 1fr) minmax(160px, 1.4fr) auto; gap: 9px; align-items: center; }

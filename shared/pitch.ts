@@ -253,6 +253,21 @@ export function annotatedDependencies(pitch: Pitch, pitches: Pitch[]): Annotated
     });
 }
 
+// Removes one specific edge, matching both target and reason so duplicate
+// targets with distinct reasons are removable independently.
+export function withoutDependency(dependencies: PitchDependency[], edge: PitchDependency): PitchDependency[] {
+  return dependencies.filter((item) => !(item.pitchId === edge.pitchId && item.reason === edge.reason));
+}
+
+// Pitches a new dependency may target: proposals and bets other than the
+// pitch itself that it does not already depend on. Notes are excluded to
+// match what the map and exports draw; existing note-demoted edges are still
+// shown (with their status) rather than silently kept valid.
+export function dependencyCandidates(pitch: Pitch, pitches: Pitch[]): Pitch[] {
+  const existing = new Set((pitch.dependencies ?? []).map((edge) => edge.pitchId));
+  return pitches.filter((item) => item.id !== pitch.id && ladderStage(item) !== 'note' && !existing.has(item.id));
+}
+
 // The drawable subset: edges whose target is present in the given pitch set
 // and not a note. Cycle checks intentionally use the wider set.
 export function resolvableDependencies(pitch: Pitch, pitches: Pitch[]): PitchDependency[] {

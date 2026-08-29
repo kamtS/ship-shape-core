@@ -29,6 +29,10 @@ export interface Pitch {
   risks: string;
   decision: Decision;
   decisionRationale: string;
+  // Advisory client workflow metadata: the rung the user promoted this pitch
+  // to. The server cannot verify promotion and must never treat the stored
+  // stage as a security property—the write gate rests on the Bet decision
+  // plus isBetReady, which the server checks independently.
   stage?: LadderStage;
   createdAt: string;
   updatedAt: string;
@@ -72,8 +76,9 @@ function legacyStage(pitch: Pitch): LadderStage {
 }
 
 export function ladderStage(pitch: Pitch): LadderStage {
+  if (pitch.github) return 'bet';
   const claimed = pitch.stage ?? legacyStage(pitch);
-  if (claimed === 'bet' && !pitch.github && !(pitch.decision === 'bet' && isBetReady(pitch))) return 'proposal';
+  if (claimed === 'bet' && !(pitch.decision === 'bet' && isBetReady(pitch))) return 'proposal';
   return claimed;
 }
 

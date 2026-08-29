@@ -33,6 +33,7 @@
     "@types/react-dom": "latest",
     "@types/supertest": "latest",
     "concurrently": "latest",
+    "playwright": "^1.62.1",
     "supertest": "latest",
     "tsx": "latest",
     "typescript": "latest",

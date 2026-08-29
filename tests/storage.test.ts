@@ -32,11 +32,13 @@ describe('localStorage persistence', () => {
     expect(loaded[2]).toEqual({ ...legacy, stage: 'proposal' });
   });
 
-  it('keeps valid drafts when one stored entry is malformed', () => {
+  it('keeps valid drafts when stored entries are malformed, staged or not', () => {
     const keeper: Pitch = { ...createEmptyPitch(), title: 'Worth keeping' };
     const { stage: _stage, ...legacyKeeper } = { ...createEmptyPitch(), title: 'Legacy keeper', problem: 'Still real' };
-    const malformed = { id: 'broken', title: 42, decision: 'undecided' };
-    localStorage.setItem(KEY, JSON.stringify([keeper, malformed, legacyKeeper]));
+    const malformedLegacy = { id: 'broken', title: 42, decision: 'undecided' };
+    const malformedStaged = { id: 'broken-staged', stage: 'note', title: 42, decision: 'undecided' };
+    const malformedDecision = { ...createEmptyPitch(), title: 'Bad decision', decision: 'maybe' };
+    localStorage.setItem(KEY, JSON.stringify([keeper, malformedLegacy, malformedStaged, malformedDecision, legacyKeeper, null]));
     const loaded = loadPitches();
     expect(loaded).toHaveLength(2);
     expect(loaded[0]).toEqual(keeper);

@@ -86,7 +86,34 @@ export function canPreviewBet(pitch: Pitch): boolean {
   return ladderStage(pitch) === 'bet' && pitch.decision === 'bet' && isBetReady(pitch);
 }
 
+const PITCH_STRING_FIELDS: Array<keyof Pitch> = [
+  'id',
+  'title',
+  'signal',
+  'source',
+  'problem',
+  'evidence',
+  'appetite',
+  'constraints',
+  'solution',
+  'risks',
+  'decisionRationale',
+  'createdAt',
+  'updatedAt',
+];
+
+const DECISIONS: Decision[] = ['undecided', 'bet', 'pass'];
+
+// Validates field types before accepting a stored record—regardless of any
+// stage it claims—so a malformed entry throws here and callers with a
+// non-destructive policy (loadPitches) can skip it instead of admitting a
+// pitch that crashes rendering later. An unrecognised stage is derived, not
+// rejected, to keep legacy drafts loadable.
 export function normalisePitch(pitch: Pitch): Pitch {
+  for (const field of PITCH_STRING_FIELDS) {
+    if (typeof pitch[field] !== 'string') throw new TypeError(`Pitch field "${String(field)}" must be a string.`);
+  }
+  if (!DECISIONS.includes(pitch.decision)) throw new TypeError('Pitch decision is not recognised.');
   return LADDER_STAGES.includes(pitch.stage as LadderStage) ? pitch : { ...pitch, stage: legacyStage(pitch) };
 }
 

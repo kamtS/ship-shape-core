@@ -70,7 +70,7 @@ export function renderMermaidMap(pitches: Pitch[], horizons: Horizon[] = DEFAULT
 }
 
 function wikiAlias(text: string): string {
-  return oneLine(text).replace(/[[\]|#^]/g, '') || 'Untitled note';
+  return oneLine(text.replace(/[[\]|#^]/g, '')) || 'Untitled note';
 }
 
 function titleCase(value: string): string {

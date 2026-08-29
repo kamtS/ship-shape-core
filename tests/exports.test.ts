@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { mappablePitches, orderForExport, renderMarkdownMap, renderMermaidMap } from '../shared/exports.js';
-import { createEmptyPitch, type Pitch } from '../shared/pitch.js';
+import { createEmptyPitch, normalisePitch, type Horizon, type Pitch } from '../shared/pitch.js';
 
 function pitchAt(id: string, title: string, createdAt: string, patch: Partial<Pitch> = {}): Pitch {
   return { ...createEmptyPitch(), id, title, createdAt, updatedAt: createdAt, problem: 'A recurring drag', stage: 'proposal', ...patch };
@@ -115,10 +115,57 @@ describe('markdown export', () => {
     expect(output).not.toContain('aaaa-1');
   });
 
+  it('sanitises wiki-link aliases so Obsidian links stay parseable', () => {
+    const target = betAt('tttt-1', 'Weird [title] with | pipes ^and #hashes', '2026-01-01T00:00:00.000Z', { github: undefined });
+    const dependent = betAt('uuuu-2', 'Depends on weird', '2026-01-02T00:00:00.000Z', { github: undefined, dependencies: [{ pitchId: 'tttt-1', reason: 'links must survive' }] });
+    const output = renderMarkdownMap([target, dependent]);
+    expect(output).toContain('[[#^tttt-1|Weird title with pipes and hashes]]');
+    expect(output).not.toMatch(/\[\[[^\]]*[|][^|\]]*[|]/);
+  });
+
   it('never invents committed dates', () => {
     const output = renderMarkdownMap(workspace());
     expect(output).not.toMatch(/\b2026-01-0\d/);
     expect(output).not.toMatch(/\bdue\b/i);
     expect(output).toContain('not committed delivery dates');
+  });
+});
+
+describe('configurable horizons', () => {
+  const quarters: Horizon[] = [
+    { id: 'soon', label: 'Soon', hint: '' },
+    { id: 'someday', label: 'Someday, maybe', hint: '' },
+  ];
+
+  it('groups both exports by the supplied horizon labels', () => {
+    const pitches = [
+      betAt('aaaa-1', 'Scheduled', '2026-01-01T00:00:00.000Z', { horizon: 'soon', github: undefined }),
+      betAt('bbbb-2', 'Drifting', '2026-01-02T00:00:00.000Z', { horizon: 'now', github: undefined }),
+    ];
+    const mermaid = renderMermaidMap(pitches, quarters);
+    expect(mermaid).toContain('subgraph h0["Soon"]');
+    expect(mermaid).toContain('subgraph h1["Someday, maybe"]');
+    expect(mermaid).not.toContain('"Now"');
+    const markdown = renderMarkdownMap(pitches, quarters);
+    expect(markdown).toContain('## Soon');
+    expect(markdown.indexOf('Scheduled')).toBeLessThan(markdown.indexOf('Drifting'));
+  });
+
+  it('drops pitches with unknown horizons onto the furthest configured horizon', () => {
+    const stray = betAt('cccc-3', 'Stray', '2026-01-01T00:00:00.000Z', { horizon: 'not-a-horizon', github: undefined });
+    const markdown = renderMarkdownMap([stray], quarters);
+    expect(markdown).toContain('## Someday, maybe');
+    expect(markdown).not.toContain('## Soon');
+  });
+});
+
+describe('legacy input', () => {
+  it('exports normalised legacy pitches deterministically', () => {
+    const { horizon: _h, dependencies: _d, ...legacy } = betAt('llll-1', 'From an old browser', '2026-01-01T00:00:00.000Z', { github: undefined });
+    const revived = [normalisePitch(JSON.parse(JSON.stringify(legacy)) as Pitch)];
+    const mermaid = renderMermaidMap(revived);
+    expect(mermaid).toContain('subgraph h2["Later"]');
+    expect(renderMermaidMap(revived)).toBe(mermaid);
+    expect(renderMarkdownMap(revived)).toBe(renderMarkdownMap(revived));
   });
 });

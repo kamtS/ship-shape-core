@@ -106,4 +106,17 @@ describe('capture ladder', () => {
     expect(normalisePitch(revived)).toEqual(proposal);
     expect(ladderStage(revived)).toBe(ladderStage(proposal));
   });
+
+  it('persists a mixed inbox of partial pitches through the localStorage JSON contract', () => {
+    const note: Pitch = { ...createEmptyPitch(), title: 'Just a nagging feeling' };
+    const proposal: Pitch = { ...createEmptyPitch(), title: 'Half shaped', problem: 'A real drag', appetite: 'Two days', stage: 'proposal' };
+    const { stage: _stage, ...legacyFields } = { ...createEmptyPitch(), title: 'From an old browser', risks: 'Unknown' };
+    const stored = JSON.stringify([note, proposal, legacyFields]);
+    const loaded = (JSON.parse(stored) as Pitch[]).map(normalisePitch);
+    expect(loaded[0]).toEqual(note);
+    expect(loaded[1]).toEqual(proposal);
+    expect(loaded.map(ladderStage)).toEqual(['note', 'proposal', 'proposal']);
+    expect(loaded[2].stage).toBe('proposal');
+    expect(loaded.map(isBetReady)).toEqual([false, false, false]);
+  });
 });

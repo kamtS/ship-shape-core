@@ -18,6 +18,8 @@ function betAt(id: string, title: string, createdAt: string, patch: Partial<Pitc
   });
 }
 
+// Export order is createdAt then id: bbbb-2 (01-01) → n1, aaaa-1 (01-02) → n2,
+// cccc-3 (01-03) → n3. The note is not mapped and gets no node.
 function workspace(): Pitch[] {
   const a = betAt('aaaa-1', 'Ship the map', '2026-01-02T00:00:00.000Z');
   const b = betAt('bbbb-2', 'Model "edges"', '2026-01-01T00:00:00.000Z', {
@@ -44,13 +46,33 @@ describe('mermaid export', () => {
     expect(renderMermaidMap(JSON.parse(JSON.stringify(pitches)) as Pitch[])).toBe(first);
   });
 
-  it('declares every edge endpoint as a node and follows basic flowchart grammar', () => {
+  it('is invariant under dependency-edge permutation and collapses duplicates', () => {
+    const edges = [
+      { pitchId: 'aaaa-1', reason: 'map first' },
+      { pitchId: 'cccc-3', reason: 'hunch first' },
+      { pitchId: 'aaaa-1', reason: 'map first' },
+    ];
+    const build = (order: typeof edges) => {
+      const pitches = workspace();
+      (pitches.find((p) => p.id === 'bbbb-2') as Pitch).dependencies = order;
+      return pitches;
+    };
+    const first = renderMermaidMap(build(edges));
+    expect(renderMermaidMap(build([...edges].reverse()))).toBe(first);
+    expect(renderMarkdownMap(build([...edges].reverse()))).toBe(renderMarkdownMap(build(edges)));
+    expect(first.match(/n2 -->\|"map first"\| n1/g)).toHaveLength(1);
+  });
+
+  it('uses synthetic node ids, maps them to pitch UUIDs, and follows flowchart grammar', () => {
     const output = renderMermaidMap(workspace());
     const lines = output.trimEnd().split('\n');
     expect(lines[0]).toBe('flowchart TD');
-    const declared = new Set([...output.matchAll(/^ {4}([\w-]+)[[(]/gm)].map((match) => match[1]));
-    expect(declared).toEqual(new Set(['aaaa-1', 'bbbb-2', 'cccc-3']));
-    const edges = [...output.matchAll(/^ {2}([\w-]+) -->(?:\|"[^"\n]*"\|)? ([\w-]+)$/gm)];
+    expect(output).toContain('%% n1 = pitch bbbb-2');
+    expect(output).toContain('%% n2 = pitch aaaa-1');
+    expect(output).toContain('%% n3 = pitch cccc-3');
+    const declared = new Set([...output.matchAll(/^ {4}(n\d+)[[(]/gm)].map((match) => match[1]));
+    expect(declared).toEqual(new Set(['n1', 'n2', 'n3']));
+    const edges = [...output.matchAll(/^ {2}(n\d+) -->(?:\|"[^"\n]*"\|)? (n\d+)$/gm)];
     expect(edges).toHaveLength(1);
     for (const [, from, to] of edges) {
       expect(declared.has(from)).toBe(true);
@@ -59,20 +81,39 @@ describe('mermaid export', () => {
     const subgraphs = output.match(/^ {2}subgraph /gm) ?? [];
     expect(subgraphs).toHaveLength(3);
     expect(output.match(/^ {2}end$/gm)).toHaveLength(subgraphs.length);
-    for (const id of ['aaaa-1', 'bbbb-2', 'cccc-3']) expect(output).toMatch(new RegExp(`^ {2}class .*${id}`, 'm'));
+    for (const id of ['n1', 'n2', 'n3']) expect(output).toMatch(new RegExp(`^ {2}class .*${id}`, 'm'));
   });
 
-  it('escapes quotes, labels edges with reasons, and links only GitHub-linked bets', () => {
+  it('escapes labels, labels edges with reasons, and links only GitHub-linked bets', () => {
     const output = renderMermaidMap(workspace());
-    expect(output).toContain('bbbb-2["Model #quot;edges#quot;"]');
-    expect(output).toContain('cccc-3(["A later hunch"])');
-    expect(output).toContain('aaaa-1 -->|"Map must exist first"| bbbb-2');
-    expect(output).toContain('click aaaa-1 "https://example.test/aaaa-1" _blank');
-    expect(output).not.toContain('click bbbb-2');
-    expect(output).not.toContain('click cccc-3');
+    expect(output).toContain('n1["Model #quot;edges#quot;"]');
+    expect(output).toContain('n3(["A later hunch"])');
+    expect(output).toContain('n2 -->|"Map must exist first"| n1');
+    expect(output).toContain('click n2 "https://example.test/aaaa-1" _blank');
+    expect(output.match(/^ {2}click /gm)).toHaveLength(1);
   });
 
-  it('omits edges to deleted or note-stage pitches without crashing', () => {
+  it('escapes adversarial titles and reasons instead of letting them close the grammar', () => {
+    const evil = betAt('eeee-1', 'Break"] --> out & <b>bold</b> #x', '2026-01-01T00:00:00.000Z', { github: undefined });
+    const dependent = betAt('ffff-2', 'Dependent', '2026-01-02T00:00:00.000Z', {
+      github: undefined, dependencies: [{ pitchId: 'eeee-1', reason: 'needs "quotes" | pipes\nand lines' }],
+    });
+    const output = renderMermaidMap([evil, dependent]);
+    expect(output).toContain('n1["Break#quot;] --#gt; out #38; #lt;b#gt;bold#lt;/b#gt; #35;x"]');
+    expect(output).toContain('n1 -->|"needs #quot;quotes#quot; | pipes and lines"| n2');
+    expect(output).not.toContain('<b>');
+    expect(renderMermaidMap([evil, dependent])).toBe(output);
+  });
+
+  it('withholds click directives for non-http(s) snapshot URLs', () => {
+    const tampered = betAt('aaaa-1', 'Tampered', '2026-01-01T00:00:00.000Z');
+    (tampered.github as { url: string }).url = 'javascript:alert(1)';
+    const output = renderMermaidMap([tampered]);
+    expect(output).not.toContain('click');
+    expect(output).not.toContain('javascript:');
+  });
+
+  it('surfaces deleted and note-demoted dependency targets instead of hiding them', () => {
     const pitches = workspace().filter((pitch) => pitch.id !== 'aaaa-1');
     const survivor = pitches.find((pitch) => pitch.id === 'bbbb-2') as Pitch;
     survivor.dependencies = [...(survivor.dependencies ?? []), { pitchId: 'dddd-4', reason: 'points at a note' }];
@@ -80,6 +121,9 @@ describe('mermaid export', () => {
     expect(output).not.toContain('aaaa-1');
     expect(output).not.toContain('dddd-4');
     expect(output).not.toContain('-->');
+    expect(output).toContain('⚠ 2 unresolved dependencies');
+    expect(output).toContain('%% unresolved: n1 depends on a pitch no longer in this workspace — Map must exist first');
+    expect(output).toContain('%% unresolved: n1 depends on "Just a note" (still a note) — points at a note');
     expect(renderMermaidMap(pitches)).toBe(output);
   });
 
@@ -102,17 +146,33 @@ describe('markdown export', () => {
     for (const heading of ['## Now', '## Next', '## Later']) expect(output).toContain(heading);
     for (const id of ['aaaa-1', 'bbbb-2', 'cccc-3']) expect(output).toContain(`Pitch \`${id}\` ^${id}`);
     expect(output).toContain('- Depends on [[#^aaaa-1|Ship the map]] — Map must exist first');
-    expect(output).toContain('- GitHub: [demo/sandbox#7](https://example.test/aaaa-1)');
+    expect(output).toContain('- GitHub: [demo/sandbox\\#7](https://example.test/aaaa-1)');
     expect(output).toContain('- Appetite: Medium batch — “One focused week”');
     expect(output).toContain('- Confidence: Low');
     expect(output).not.toContain('Just a note');
   });
 
-  it('drops dangling dependency lines when the target pitch is deleted', () => {
-    const pitches = workspace().filter((pitch) => pitch.id !== 'aaaa-1');
-    const output = renderMarkdownMap(pitches);
-    expect(output).not.toContain('Depends on');
-    expect(output).not.toContain('aaaa-1');
+  it('escapes markdown metacharacters in titles, reasons, and problems', () => {
+    const evil = betAt('eeee-1', 'Sneaky [link](https://evil.test) <script>alert(1)</script>', '2026-01-01T00:00:00.000Z', {
+      github: undefined, problem: 'Inline `code` and *emphasis* and <!-- comments -->',
+    });
+    const dependent = betAt('ffff-2', 'Dependent', '2026-01-02T00:00:00.000Z', {
+      github: undefined, dependencies: [{ pitchId: 'eeee-1', reason: 'because ![img](x) | tables' }],
+    });
+    const output = renderMarkdownMap([evil, dependent]);
+    expect(output).toContain('### Sneaky \\[link\\](https://evil.test) \\<script\\>alert(1)\\</script\\>');
+    expect(output).toContain('Inline \\`code\\` and \\*emphasis\\* and \\<\\!-- comments --\\>');
+    expect(output).toContain('— because \\!\\[img\\](x) \\| tables');
+    expect(output).not.toMatch(/[^\\]<script>/);
+    expect(renderMarkdownMap([evil, dependent])).toBe(output);
+  });
+
+  it('withholds GitHub links for non-http(s) snapshot URLs', () => {
+    const tampered = betAt('aaaa-1', 'Tampered', '2026-01-01T00:00:00.000Z');
+    (tampered.github as { url: string }).url = 'javascript:alert(1)';
+    const output = renderMarkdownMap([tampered]);
+    expect(output).toContain('- GitHub: demo/sandbox\\#7 (link withheld — stored URL is not a plain http(s) URL)');
+    expect(output).not.toContain('javascript:');
   });
 
   it('sanitises wiki-link aliases so Obsidian links stay parseable', () => {
@@ -121,6 +181,17 @@ describe('markdown export', () => {
     const output = renderMarkdownMap([target, dependent]);
     expect(output).toContain('[[#^tttt-1|Weird title with pipes and hashes]]');
     expect(output).not.toMatch(/\[\[[^\]]*[|][^|\]]*[|]/);
+  });
+
+  it('keeps deleted and note-demoted dependencies visible with explicit annotations', () => {
+    const pitches = workspace().filter((pitch) => pitch.id !== 'aaaa-1');
+    const survivor = pitches.find((pitch) => pitch.id === 'bbbb-2') as Pitch;
+    survivor.dependencies = [...(survivor.dependencies ?? []), { pitchId: 'dddd-4', reason: 'points at a note' }];
+    const output = renderMarkdownMap(pitches);
+    expect(output).toContain('- Depends on a pitch no longer in this workspace — Map must exist first');
+    expect(output).toContain('- Depends on Just a note (still a note — not on this map) — points at a note');
+    expect(output).not.toContain('aaaa-1');
+    expect(output).not.toContain('[[#^dddd-4');
   });
 
   it('never invents committed dates', () => {
@@ -156,6 +227,14 @@ describe('configurable horizons', () => {
     const markdown = renderMarkdownMap([stray], quarters);
     expect(markdown).toContain('## Someday, maybe');
     expect(markdown).not.toContain('## Soon');
+  });
+
+  it('treats an empty horizon configuration as the built-in defaults', () => {
+    const pitches = [betAt('aaaa-1', 'Somewhere', '2026-01-01T00:00:00.000Z', { github: undefined })];
+    const mermaid = renderMermaidMap(pitches, []);
+    expect(mermaid).toContain('subgraph h0["Now"]');
+    expect(mermaid).toBe(renderMermaidMap(pitches));
+    expect(renderMarkdownMap(pitches, [])).toBe(renderMarkdownMap(pitches));
   });
 });
 

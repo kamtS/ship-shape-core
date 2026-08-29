@@ -1,12 +1,22 @@
 import { describe, expect, it } from 'vitest';
 import {
+  annotatedDependencies,
+  canonicalDependencies,
   canPreviewBet,
   createEmptyPitch,
+  DEFAULT_HORIZONS,
+  dependencyCandidates,
+  dependencyCycleError,
+  effectiveHorizons,
+  fallbackHorizonId,
+  horizonOf,
   isBetReady,
   ladderStage,
   normalisePitch,
   renderIssueBody,
+  resolvableDependencies,
   shapedSectionCount,
+  withoutDependency,
   type Pitch,
 } from '../shared/pitch.js';
 
@@ -108,5 +118,157 @@ describe('capture ladder', () => {
     expect(revived).toEqual(proposal);
     expect(normalisePitch(revived)).toEqual(proposal);
     expect(ladderStage(revived)).toBe(ladderStage(proposal));
+  });
+});
+
+function mapPitch(id: string, title: string, patch: Partial<Pitch> = {}): Pitch {
+  return { ...createEmptyPitch(), id, title, problem: 'Something drags', stage: 'proposal', ...patch };
+}
+
+describe('bet map model', () => {
+  it('starts new pitches unscheduled on the furthest horizon with no dependencies', () => {
+    const pitch = createEmptyPitch();
+    expect(pitch.horizon).toBe('later');
+    expect(pitch.dependencies).toEqual([]);
+    expect(pitch.appetiteBand).toBeUndefined();
+    expect(pitch.confidence).toBeUndefined();
+  });
+
+  it('keeps the issue body free of bet-map metadata', () => {
+    const pitch = { ...completePitch(), horizon: 'now', appetiteBand: 'medium', confidence: 'high', dependencies: [{ pitchId: 'x', reason: 'sequencing' }] } as Pitch;
+    const body = renderIssueBody(pitch);
+    expect(body).toBe(renderIssueBody(completePitch()));
+    for (const leak of ['horizon', 'confidence', 'sequencing', 'appetiteBand']) expect(body).not.toContain(leak);
+  });
+
+  it('backfills legacy pitches and drops malformed bet-map fields', () => {
+    const { stage: _stage, horizon: _h, dependencies: _d, ...legacyFields } = completePitch();
+    const legacy = normalisePitch(legacyFields as Pitch);
+    expect(legacy.horizon).toBe('later');
+    expect(legacy.dependencies).toEqual([]);
+    const mangled = normalisePitch({ ...completePitch(), appetiteBand: 42, confidence: { level: 'high' }, horizon: '', dependencies: [{ pitchId: 42 }, null, { pitchId: 'other', reason: 7 }] } as unknown as Pitch);
+    expect(mangled.appetiteBand).toBeUndefined();
+    expect(mangled.confidence).toBeUndefined();
+    expect(mangled.horizon).toBe('later');
+    expect(mangled.dependencies).toEqual([{ pitchId: 'other', reason: '' }]);
+  });
+
+  it('preserves unknown band and confidence strings from newer app versions', () => {
+    const future = normalisePitch({ ...completePitch(), appetiteBand: 'gigantic', confidence: 'certain' } as Pitch);
+    expect(future.appetiteBand).toBe('gigantic');
+    expect(future.confidence).toBe('certain');
+    const roundTripped = normalisePitch(JSON.parse(JSON.stringify(future)) as Pitch);
+    expect(roundTripped.appetiteBand).toBe('gigantic');
+    expect(roundTripped.confidence).toBe('certain');
+  });
+
+  it('canonically sorts and deduplicates dependency edges', () => {
+    const edges = [
+      { pitchId: 'b', reason: 'later' },
+      { pitchId: 'a', reason: 'z-reason' },
+      { pitchId: 'b', reason: 'later' },
+      { pitchId: 'a', reason: 'a-reason' },
+    ];
+    expect(canonicalDependencies(edges)).toEqual([
+      { pitchId: 'a', reason: 'a-reason' },
+      { pitchId: 'a', reason: 'z-reason' },
+      { pitchId: 'b', reason: 'later' },
+    ]);
+    const pitch = normalisePitch({ ...completePitch(), dependencies: [...edges] } as Pitch);
+    expect(pitch.dependencies).toEqual(canonicalDependencies(edges));
+  });
+
+  it('never conflates distinct edges whose fields straddle the dedup delimiter', () => {
+    const tricky = [
+      { pitchId: 'a', reason: 'b\0c' },
+      { pitchId: 'a\0b', reason: 'c' },
+      { pitchId: 'a b', reason: 'c' },
+      { pitchId: 'a', reason: 'b c' },
+    ];
+    expect(canonicalDependencies(tricky)).toHaveLength(4);
+    expect(canonicalDependencies([...tricky, { pitchId: 'a', reason: 'b\0c' }])).toHaveLength(4);
+  });
+
+  it('tolerates an empty horizon configuration by falling back to the defaults', () => {
+    expect(fallbackHorizonId([])).toBe('later');
+    expect(horizonOf(mapPitch('a', 'A', { horizon: 'now' }), [])).toBe('now');
+    expect(horizonOf(mapPitch('a', 'A', { horizon: 'someday' }), [])).toBe('later');
+    expect(effectiveHorizons([])).toEqual(DEFAULT_HORIZONS);
+    expect(effectiveHorizons()).toEqual(DEFAULT_HORIZONS);
+  });
+
+  it('annotates every stored edge with an explicit status', () => {
+    const a = mapPitch('a', 'Alpha', {
+      dependencies: [
+        { pitchId: 'gone', reason: 'was deleted' },
+        { pitchId: 'b', reason: 'still here' },
+        { pitchId: 'c', reason: 'demoted' },
+        { pitchId: 'a', reason: 'self' },
+      ],
+    });
+    const b = mapPitch('b', 'Beta');
+    const c = mapPitch('c', 'Gamma', { stage: 'note', problem: '' });
+    const annotated = annotatedDependencies(a, [a, b, c]);
+    expect(annotated.map((edge) => [edge.pitchId, edge.status])).toEqual([
+      ['b', 'ok'],
+      ['c', 'note'],
+      ['gone', 'missing'],
+    ]);
+    expect(annotated[0].target?.title).toBe('Beta');
+    expect(annotated[2].target).toBeUndefined();
+  });
+
+  it('round-trips structured bet-map fields through the JSON contract', () => {
+    const pitch: Pitch = { ...completePitch(), appetiteBand: 'small', confidence: 'medium', horizon: 'next', dependencies: [{ pitchId: 'dep-1', reason: 'Needs the shared model first' }] };
+    const revived = normalisePitch(JSON.parse(JSON.stringify(pitch)) as Pitch);
+    expect(revived).toEqual(pitch);
+  });
+
+  it('maps unknown horizons onto the furthest configured horizon', () => {
+    expect(horizonOf(mapPitch('a', 'A', { horizon: 'now' }))).toBe('now');
+    expect(horizonOf(mapPitch('a', 'A', { horizon: 'someday' }))).toBe('later');
+    expect(horizonOf(mapPitch('a', 'A', { horizon: 'q3' }), [{ id: 'q3', label: 'Q3', hint: '' }, { id: 'q4', label: 'Q4', hint: '' }])).toBe('q3');
+    expect(DEFAULT_HORIZONS.map((horizon) => horizon.id)).toEqual(['now', 'next', 'later']);
+  });
+
+  it('rejects self, direct, and transitive dependency cycles with a legible loop', () => {
+    const a = mapPitch('a', 'Alpha', { dependencies: [{ pitchId: 'b', reason: 'b first' }] });
+    const b = mapPitch('b', 'Beta', { dependencies: [{ pitchId: 'c', reason: 'c first' }] });
+    const c = mapPitch('c', 'Gamma');
+    const pitches = [a, b, c];
+    expect(dependencyCycleError(pitches, 'a', 'a')).toContain('cannot depend on itself');
+    expect(dependencyCycleError(pitches, 'b', 'a')).toContain('loop');
+    expect(dependencyCycleError(pitches, 'c', 'a')).toBe('This dependency would create a loop: “Gamma” → “Alpha” → “Beta” → “Gamma”.');
+    expect(dependencyCycleError(pitches, 'c', 'b')).toContain('loop');
+    expect(dependencyCycleError(pitches, 'a', 'c')).toBeNull();
+    expect(dependencyCycleError(pitches, 'b', 'a')).toContain('“Beta”');
+  });
+
+  it('removes exactly one edge, matching target and reason', () => {
+    const edges = [
+      { pitchId: 'a', reason: 'first' },
+      { pitchId: 'a', reason: 'second' },
+      { pitchId: 'b', reason: 'first' },
+    ];
+    expect(withoutDependency(edges, { pitchId: 'a', reason: 'second' })).toEqual([
+      { pitchId: 'a', reason: 'first' },
+      { pitchId: 'b', reason: 'first' },
+    ]);
+    expect(withoutDependency(edges, { pitchId: 'missing', reason: 'first' })).toEqual(edges);
+  });
+
+  it('offers only proposals and bets that are not already dependencies as candidates', () => {
+    const self = mapPitch('self', 'Self', { dependencies: [{ pitchId: 'taken', reason: 'already linked' }] });
+    const taken = mapPitch('taken', 'Taken');
+    const note = mapPitch('note', 'Still a note', { stage: 'note', problem: '' });
+    const open = mapPitch('open', 'Open target');
+    expect(dependencyCandidates(self, [self, taken, note, open]).map((item) => item.id)).toEqual(['open']);
+  });
+
+  it('ignores dependency edges whose target has been deleted', () => {
+    const a = mapPitch('a', 'Alpha', { dependencies: [{ pitchId: 'gone', reason: 'was deleted' }, { pitchId: 'b', reason: 'still here' }, { pitchId: 'a', reason: 'self' }] });
+    const b = mapPitch('b', 'Beta');
+    expect(resolvableDependencies(a, [a, b])).toEqual([{ pitchId: 'b', reason: 'still here' }]);
+    expect(dependencyCycleError([a, b], 'b', 'a')).toContain('loop');
   });
 });

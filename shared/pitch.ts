@@ -4,6 +4,42 @@ export type LadderStage = 'note' | 'proposal' | 'bet';
 
 export const LADDER_STAGES: LadderStage[] = ['note', 'proposal', 'bet'];
 
+// Bet Map metadata is local-only: it never appears in renderIssueBody or any
+// GitHub write. GitHub keeps owning issue identity, content, and state.
+
+export type AppetiteBand = 'small' | 'medium' | 'large';
+
+export const APPETITE_BANDS: AppetiteBand[] = ['small', 'medium', 'large'];
+
+export const APPETITE_BAND_LABELS: Record<AppetiteBand, string> = {
+  small: 'Small batch',
+  medium: 'Medium batch',
+  large: 'Large batch',
+};
+
+export type Confidence = 'low' | 'medium' | 'high';
+
+export const CONFIDENCE_LEVELS: Confidence[] = ['low', 'medium', 'high'];
+
+export interface Horizon {
+  id: string;
+  label: string;
+  hint: string;
+}
+
+// Horizons describe intent, never delivery dates. The labels are configurable;
+// every consumer takes a Horizon[] and defaults to this set.
+export const DEFAULT_HORIZONS: Horizon[] = [
+  { id: 'now', label: 'Now', hint: 'Being worked, or next up' },
+  { id: 'next', label: 'Next', hint: 'Likely soon, order still open' },
+  { id: 'later', label: 'Later', hint: 'Worth keeping visible' },
+];
+
+export interface PitchDependency {
+  pitchId: string;
+  reason: string;
+}
+
 export interface GitHubSnapshot {
   owner: string;
   repo: string;
@@ -34,6 +70,13 @@ export interface Pitch {
   // stage as a security property—the write gate rests on the Bet decision
   // plus isBetReady, which the server checks independently.
   stage?: LadderStage;
+  // Band and confidence are stored as open strings for forward compatibility:
+  // a value written by a newer app version round-trips untouched. Consumers
+  // validate at render time via appetiteBandOf/confidenceOf.
+  appetiteBand?: string;
+  confidence?: string;
+  horizon?: string;
+  dependencies?: PitchDependency[];
   createdAt: string;
   updatedAt: string;
   github?: GitHubSnapshot;
@@ -86,6 +129,45 @@ export function canPreviewBet(pitch: Pitch): boolean {
   return ladderStage(pitch) === 'bet' && pitch.decision === 'bet' && isBetReady(pitch);
 }
 
+// An empty or missing horizon configuration falls back to the defaults, so
+// every consumer always has at least one horizon to place pitches on.
+export function effectiveHorizons(horizons: Horizon[] = DEFAULT_HORIZONS): Horizon[] {
+  return horizons.length ? horizons : DEFAULT_HORIZONS;
+}
+
+export function fallbackHorizonId(horizons: Horizon[] = DEFAULT_HORIZONS): string {
+  const usable = effectiveHorizons(horizons);
+  return usable[usable.length - 1].id;
+}
+
+export function horizonOf(pitch: Pitch, horizons: Horizon[] = DEFAULT_HORIZONS): string {
+  return effectiveHorizons(horizons).some((horizon) => horizon.id === pitch.horizon) ? (pitch.horizon as string) : fallbackHorizonId(horizons);
+}
+
+export function appetiteBandOf(pitch: Pitch): AppetiteBand | undefined {
+  return APPETITE_BANDS.includes(pitch.appetiteBand as AppetiteBand) ? (pitch.appetiteBand as AppetiteBand) : undefined;
+}
+
+export function confidenceOf(pitch: Pitch): Confidence | undefined {
+  return CONFIDENCE_LEVELS.includes(pitch.confidence as Confidence) ? (pitch.confidence as Confidence) : undefined;
+}
+
+// Canonical edge order: target id then reason, exact duplicates collapsed.
+// This makes edge ordering irrelevant to exports and gives every edge a
+// stable, unique (pitchId, reason) identity.
+export function canonicalDependencies(dependencies: PitchDependency[]): PitchDependency[] {
+  const seen = new Set<string>();
+  return [...dependencies]
+    .sort((a, b) => (a.pitchId < b.pitchId ? -1 : a.pitchId > b.pitchId ? 1 : a.reason < b.reason ? -1 : a.reason > b.reason ? 1 : 0))
+    .filter((edge) => {
+      // JSON tuple encoding: no delimiter an id or reason could smuggle in.
+      const key = JSON.stringify([edge.pitchId, edge.reason]);
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+}
+
 const PITCH_STRING_FIELDS: Array<keyof Pitch> = [
   'id',
   'title',
@@ -120,6 +202,10 @@ function assertValidSnapshot(snapshot: GitHubSnapshot): void {
 // non-destructive policy (loadPitches) can skip it instead of admitting a
 // pitch that crashes rendering later. An unrecognised stage is derived, not
 // rejected, to keep legacy drafts loadable.
+// Backfills legacy drafts: stage is derived, dependencies default to none, and
+// an unset horizon lands on the last (furthest-out) horizon rather than
+// inventing urgency. Unknown appetiteBand/confidence strings are preserved
+// as-is (forward compatibility); only non-strings are dropped.
 export function normalisePitch(pitch: Pitch): Pitch {
   for (const field of PITCH_STRING_FIELDS) {
     if (typeof pitch[field] !== 'string') throw new TypeError(`Pitch field "${String(field)}" must be a string.`);
@@ -129,7 +215,92 @@ export function normalisePitch(pitch: Pitch): Pitch {
   // snapshot: silently unlinking would let a later bet create a duplicate
   // canonical issue, and a coerced snapshot could fake a link.
   if (pitch.github !== undefined) assertValidSnapshot(pitch.github);
-  return LADDER_STAGES.includes(pitch.stage as LadderStage) ? pitch : { ...pitch, stage: legacyStage(pitch) };
+  const dependencies = Array.isArray(pitch.dependencies)
+    ? canonicalDependencies(pitch.dependencies
+        .filter((edge): edge is PitchDependency => Boolean(edge) && typeof edge.pitchId === 'string')
+        .map((edge) => ({ pitchId: edge.pitchId, reason: typeof edge.reason === 'string' ? edge.reason : '' })))
+    : [];
+  return {
+    ...pitch,
+    stage: LADDER_STAGES.includes(pitch.stage as LadderStage) ? pitch.stage : legacyStage(pitch),
+    appetiteBand: typeof pitch.appetiteBand === 'string' ? pitch.appetiteBand : undefined,
+    confidence: typeof pitch.confidence === 'string' ? pitch.confidence : undefined,
+    horizon: typeof pitch.horizon === 'string' && pitch.horizon ? pitch.horizon : fallbackHorizonId(),
+    dependencies,
+  };
+}
+
+export type DependencyStatus = 'ok' | 'note' | 'missing';
+
+export interface AnnotatedDependency extends PitchDependency {
+  status: DependencyStatus;
+  target?: Pitch;
+}
+
+// Every stored edge, in canonical order, with an explicit status: 'ok' targets
+// a proposal or bet on the map, 'note' targets a pitch demoted to the inbox,
+// 'missing' targets a pitch no longer in the workspace. Self-edges are
+// dropped. No consumer may silently hide a non-ok edge — the map, both
+// exports, and the editor all surface them so a pitch never quietly reads as
+// unblocked.
+export function annotatedDependencies(pitch: Pitch, pitches: Pitch[]): AnnotatedDependency[] {
+  const byId = new Map(pitches.map((item) => [item.id, item]));
+  return canonicalDependencies(pitch.dependencies ?? [])
+    .filter((edge) => edge.pitchId !== pitch.id)
+    .map((edge) => {
+      const target = byId.get(edge.pitchId);
+      return { ...edge, target, status: !target ? 'missing' : ladderStage(target) === 'note' ? 'note' : 'ok' };
+    });
+}
+
+// Removes one specific edge, matching both target and reason so duplicate
+// targets with distinct reasons are removable independently.
+export function withoutDependency(dependencies: PitchDependency[], edge: PitchDependency): PitchDependency[] {
+  return dependencies.filter((item) => !(item.pitchId === edge.pitchId && item.reason === edge.reason));
+}
+
+// Pitches a new dependency may target: proposals and bets other than the
+// pitch itself that it does not already depend on. Notes are excluded to
+// match what the map and exports draw; existing note-demoted edges are still
+// shown (with their status) rather than silently kept valid.
+export function dependencyCandidates(pitch: Pitch, pitches: Pitch[]): Pitch[] {
+  const existing = new Set((pitch.dependencies ?? []).map((edge) => edge.pitchId));
+  return pitches.filter((item) => item.id !== pitch.id && ladderStage(item) !== 'note' && !existing.has(item.id));
+}
+
+// The drawable subset: edges whose target is present in the given pitch set
+// and not a note. Cycle checks intentionally use the wider set.
+export function resolvableDependencies(pitch: Pitch, pitches: Pitch[]): PitchDependency[] {
+  const ids = new Set(pitches.map((item) => item.id));
+  return canonicalDependencies(pitch.dependencies ?? []).filter((edge) => edge.pitchId !== pitch.id && ids.has(edge.pitchId));
+}
+
+function findDependencyPath(pitches: Pitch[], startId: string, goalId: string): string[] | null {
+  const byId = new Map(pitches.map((pitch) => [pitch.id, pitch]));
+  const visited = new Set<string>();
+  function walk(id: string, trail: string[]): string[] | null {
+    if (id === goalId) return [...trail, id];
+    if (visited.has(id)) return null;
+    visited.add(id);
+    const pitch = byId.get(id);
+    for (const edge of pitch ? resolvableDependencies(pitch, pitches) : []) {
+      const found = walk(edge.pitchId, [...trail, id]);
+      if (found) return found;
+    }
+    return null;
+  }
+  return walk(startId, []);
+}
+
+// Returns a human-readable refusal when adding source→target would create a
+// cycle (or a self-dependency), and null when the edge is safe to add.
+export function dependencyCycleError(pitches: Pitch[], sourceId: string, targetId: string): string | null {
+  const byId = new Map(pitches.map((pitch) => [pitch.id, pitch]));
+  const name = (id: string) => `“${byId.get(id)?.title.trim() || 'Untitled note'}”`;
+  if (sourceId === targetId) return `${name(sourceId)} cannot depend on itself.`;
+  const path = findDependencyPath(pitches, targetId, sourceId);
+  if (!path) return null;
+  return `This dependency would create a loop: ${[sourceId, ...path].map(name).join(' → ')}.`;
 }
 
 function section(title: string, content: string): string {
@@ -167,6 +338,8 @@ export function createEmptyPitch(): Pitch {
     decision: 'undecided',
     decisionRationale: '',
     stage: 'note',
+    horizon: fallbackHorizonId(),
+    dependencies: [],
     createdAt: now,
     updatedAt: now,
   };

@@ -12,6 +12,7 @@ import {
   LockKeyhole,
   LogOut,
   Loader2,
+  Map as MapIcon,
   Plus,
   RefreshCw,
   ShieldCheck,
@@ -19,22 +20,32 @@ import {
   X,
 } from 'lucide-react';
 import {
+  annotatedDependencies,
+  APPETITE_BAND_LABELS,
+  APPETITE_BANDS,
   canPreviewBet,
+  CONFIDENCE_LEVELS,
   createEmptyPitch,
+  DEFAULT_HORIZONS,
+  dependencyCandidates,
+  dependencyCycleError,
+  horizonOf,
+  withoutDependency,
   isBetReady,
   LADDER_STAGES,
   ladderStage,
-  shapedSectionCount,
   type GitHubSnapshot,
   type LadderStage,
   type Pitch,
   type PitchSectionKey,
+  shapedSectionCount,
 } from '../shared/pitch';
+import { BetMap } from './BetMap';
 import { api, type AppConfig, type IssuePreview, type RepositoryChoice } from './api';
 import { stubSparringPartner } from './sparring';
 import { dismissStorageNote, isStorageNoteDismissed, loadPitches, savePitches } from './storage';
 
-type View = 'capture' | 'shape' | 'decide';
+type View = 'capture' | 'shape' | 'decide' | 'map';
 
 const stageMeta: Record<LadderStage, { label: string; hint: string }> = {
   note: { label: 'Note', hint: 'A name is enough. Saved instantly.' },
@@ -201,6 +212,9 @@ export function App() {
               <span>Opportunity inbox</span>
               <button className="icon-button" onClick={newOpportunity} title="Jot a note"><Plus size={17} /></button>
             </div>
+            <button className={`map-link ${view === 'map' ? 'active' : ''}`} onClick={() => setView('map')}>
+              <MapIcon size={15} /> Bet map <small>horizons · no dates</small>
+            </button>
             <div className="pitch-list">
               {pitches.length === 0 ? (
                 <button className="empty-inbox" onClick={newOpportunity}><Inbox size={22} /><span>Jot your first note</span></button>
@@ -225,7 +239,9 @@ export function App() {
         </aside>
 
         <main className="main">
-          {!selected ? <EmptyState onCreate={newOpportunity} /> : (
+          {view === 'map' ? (
+            <BetMap pitches={pitches} onOpen={(id) => { setSelectedId(id); setView('shape'); }} />
+          ) : !selected ? <EmptyState onCreate={newOpportunity} /> : (
             <>
               <div className="context-bar">
                 <button className={view === 'capture' ? 'active' : ''} onClick={() => setView('capture')}><span>1</span> Capture</button>
@@ -246,6 +262,7 @@ export function App() {
               {view === 'decide' && (
                 <Decide
                   pitch={selected}
+                  pitches={pitches}
                   update={update}
                   ready={ready}
                   config={config}
@@ -353,7 +370,7 @@ function Shape({ pitch, update, completed, onDecide }: { pitch: Pitch; update: (
   </section>;
 }
 
-function Decide({ pitch, update, ready, config, busy, repositories, onSelectRepository, onLogout, onPrepare, onRefresh, previewTriggerRef }: { pitch: Pitch; update: (patch: Partial<Pitch>) => void; ready: boolean; config: AppConfig; busy: boolean; repositories: RepositoryChoice[]; onSelectRepository: (value: string) => void; onLogout: () => void; onPrepare: () => void; onRefresh: () => void; previewTriggerRef: RefObject<HTMLButtonElement | null> }) {
+function Decide({ pitch, pitches, update, ready, config, busy, repositories, onSelectRepository, onLogout, onPrepare, onRefresh, previewTriggerRef }: { pitch: Pitch; pitches: Pitch[]; update: (patch: Partial<Pitch>) => void; ready: boolean; config: AppConfig; busy: boolean; repositories: RepositoryChoice[]; onSelectRepository: (value: string) => void; onLogout: () => void; onPrepare: () => void; onRefresh: () => void; previewTriggerRef: RefObject<HTMLButtonElement | null> }) {
   const targetReady = config.mode === 'demo' || Boolean(config.auth.signedIn && config.repository);
   return <section className="page narrow decision-page">
     <button className="back-link" onClick={() => document.querySelector<HTMLButtonElement>('.context-bar button:nth-of-type(2)')?.click()}><ArrowLeft size={15} /> Back to shaping</button>
@@ -371,9 +388,69 @@ function Decide({ pitch, update, ready, config, busy, repositories, onSelectRepo
       <div><span className="kicker">Bet readiness</span><strong>{ready ? 'The pitch has a complete shape.' : `${shapedSectionCount(pitch)} of ${fieldMeta.length} shaped so far.`}</strong><p>{ready ? 'You can review the exact GitHub write. Nothing is sent until you confirm.' : 'A note or proposal can stay open-ended forever. Only a bet asks for all seven sections.'}</p></div>
       <div className={`readiness-mark ${ready ? 'ready' : ''}`}>{ready ? <Check size={22} /> : `${shapedSectionCount(pitch)}/${fieldMeta.length}`}</div>
     </div>
+    <MapPlacement pitch={pitch} pitches={pitches} update={update} />
     <button ref={previewTriggerRef} className="bet-button" disabled={!canPreviewBet(pitch) || busy || !targetReady} onClick={onPrepare}>{busy ? <Loader2 className="spin" size={18} /> : <GitPullRequest size={18} />}{!targetReady ? 'Connect GitHub and choose a repository' : pitch.github ? 'Review GitHub update' : 'Review and make the bet'}<ArrowRight size={18} /></button>
     <p className="write-boundary"><ShieldCheck size={15} /> This opens a precise preview. A second confirmation is required for every write.</p>
   </section>;
+}
+
+function MapPlacement({ pitch, pitches, update }: { pitch: Pitch; pitches: Pitch[]; update: (patch: Partial<Pitch>) => void }) {
+  const [targetId, setTargetId] = useState('');
+  const [reason, setReason] = useState('');
+  const [depError, setDepError] = useState<string | null>(null);
+  const dependencies = annotatedDependencies(pitch, pitches);
+  const candidates = dependencyCandidates(pitch, pitches);
+
+  function addDependency() {
+    if (!targetId || !reason.trim()) return;
+    const error = dependencyCycleError(pitches, pitch.id, targetId);
+    if (error) { setDepError(error); return; }
+    update({ dependencies: [...(pitch.dependencies ?? []), { pitchId: targetId, reason: reason.trim() }] });
+    setTargetId(''); setReason(''); setDepError(null);
+  }
+
+  return <div className="placement-card">
+    <span className="kicker">Bet map placement</span>
+    <p>Local-only roadmap metadata. Horizons describe intent—never committed dates—and none of this is written to GitHub.</p>
+    <div className="placement-grid">
+      <label><span>Horizon</span>
+        <select value={horizonOf(pitch)} onChange={(e) => update({ horizon: e.target.value })}>
+          {DEFAULT_HORIZONS.map((horizon) => <option key={horizon.id} value={horizon.id}>{horizon.label} · {horizon.hint.toLowerCase()}</option>)}
+        </select>
+      </label>
+      <label><span>Appetite band</span>
+        <select value={pitch.appetiteBand ?? ''} onChange={(e) => update({ appetiteBand: e.target.value || undefined })}>
+          <option value="">Not set</option>
+          {APPETITE_BANDS.map((band) => <option key={band} value={band}>{APPETITE_BAND_LABELS[band]}</option>)}
+        </select>
+      </label>
+      <label><span>Confidence</span>
+        <select value={pitch.confidence ?? ''} onChange={(e) => update({ confidence: e.target.value || undefined })}>
+          <option value="">Not set</option>
+          {CONFIDENCE_LEVELS.map((level) => <option key={level} value={level}>{level[0].toUpperCase()}{level.slice(1)}</option>)}
+        </select>
+      </label>
+    </div>
+    {dependencies.length > 0 && <ul className="placement-deps">
+      {dependencies.map((edge) => {
+        const name = edge.target ? edge.target.title.trim() || 'Untitled note' : 'a pitch no longer in this workspace';
+        const status = edge.status === 'missing' ? ' · shown as unresolved on the map and in exports' : edge.status === 'note' ? ' · still a note — shown as unresolved until it becomes a proposal' : '';
+        return <li key={`${edge.pitchId}::${edge.reason}`} className={edge.status === 'ok' ? '' : 'unresolved'}>
+          <span><strong>Needs {name}</strong>{edge.reason ? ` — ${edge.reason}` : ''}{status}</span>
+          <button className="icon-button" aria-label={`Remove dependency on ${edge.target?.title.trim() || 'removed pitch'}`} onClick={() => update({ dependencies: withoutDependency(pitch.dependencies ?? [], edge) })}><X size={13} /></button>
+        </li>;
+      })}
+    </ul>}
+    <div className="placement-add">
+      <select value={targetId} onChange={(e) => { setTargetId(e.target.value); setDepError(null); }} aria-label="Pitch this one depends on">
+        <option value="">Depends on…</option>
+        {candidates.map((item) => <option key={item.id} value={item.id}>{item.title.trim() || 'Untitled note'}</option>)}
+      </select>
+      <input value={reason} onChange={(e) => { setReason(e.target.value); setDepError(null); }} placeholder="Why does it depend on that?" aria-label="Dependency reason" />
+      <button className="secondary" disabled={!targetId || !reason.trim()} onClick={addDependency}><Plus size={14} /> Add</button>
+    </div>
+    {depError && <p className="placement-error" role="alert">{depError}</p>}
+  </div>;
 }
 
 function GitHubConnection({ config, repositories, busy, onSelectRepository, onLogout }: { config: AppConfig; repositories: RepositoryChoice[]; busy: boolean; onSelectRepository: (value: string) => void; onLogout: () => void }) {

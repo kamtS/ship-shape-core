@@ -4,7 +4,7 @@ import rateLimit from 'express-rate-limit';
 import helmet from 'helmet';
 import path from 'node:path';
 import { randomBytes, randomUUID } from 'node:crypto';
-import { isBetReady, renderIssueBody, type Pitch } from '../shared/pitch.js';
+import { canPreviewBet, renderIssueBody, type Pitch } from '../shared/pitch.js';
 import { DemoIssueGateway, GatewayError, GitHubIssueGateway, type IssueGateway } from './issueGateway.js';
 import {
   createOAuthAttempt,
@@ -254,7 +254,7 @@ export function createApp(options: AppOptions = {}) {
     if (!pitch?.id || pitch.id.length > 100 || !pitch.title?.trim() || pitch.title.trim().length > 256) {
       return res.status(400).json({ error: 'A valid titled pitch is required.' });
     }
-    if (pitch.decision !== 'bet' || !isBetReady(pitch)) return res.status(400).json({ error: 'Complete the shape and choose Bet before previewing a write.' });
+    if (!canPreviewBet(pitch)) return res.status(400).json({ error: 'Only a pitch at the bet rung, with a complete shape and the Bet decision, can preview a write.' });
 
     const gateway = await gatewayFor(req);
     const target = repositoryKey(req);

@@ -8,7 +8,7 @@ function completePitch(id = 'pitch-app-test'): Pitch {
   return {
     ...createEmptyPitch(), id, title: 'A bounded bet', problem: 'A real problem', evidence: 'Repeated evidence',
     appetite: 'One week', constraints: 'No automation', solution: 'A focused flow', risks: 'One known risk',
-    decision: 'bet', decisionRationale: 'Worth the appetite',
+    decision: 'bet', decisionRationale: 'Worth the appetite', stage: 'bet',
   };
 }
 
@@ -35,6 +35,20 @@ describe('app safety boundary', () => {
     const issue = await agent.post('/api/issues/confirm').set('X-CSRF-Token', config.body.csrfToken).send({ previewId: preview.body.previewId, confirmed: true }).expect(200);
     expect(issue.body.number).toBe(41);
     await agent.post('/api/issues/confirm').set('X-CSRF-Token', config.body.csrfToken).send({ previewId: preview.body.previewId, confirmed: true }).expect(410);
+  });
+
+  it('rejects previews for pitches below the bet rung of the capture ladder', async () => {
+    const agent = supertest.agent(createApp({ sessionSecret: 'test-secret'.repeat(4) }));
+    const config = await agent.get('/api/config');
+    const csrf = config.body.csrfToken;
+    const note: Pitch = { ...createEmptyPitch(), title: 'Just a note' };
+    await agent.post('/api/issues/preview').set('X-CSRF-Token', csrf).send({ pitch: note }).expect(400);
+    const proposal: Pitch = { ...completePitch('pitch-held-back'), stage: 'proposal' };
+    await agent.post('/api/issues/preview').set('X-CSRF-Token', csrf).send({ pitch: proposal }).expect(400);
+    const incompleteBet: Pitch = { ...completePitch('pitch-incomplete'), solution: '' };
+    await agent.post('/api/issues/preview').set('X-CSRF-Token', csrf).send({ pitch: incompleteBet }).expect(400);
+    const { stage: _stage, ...legacy } = completePitch('pitch-legacy');
+    await agent.post('/api/issues/preview').set('X-CSRF-Token', csrf).send({ pitch: legacy }).expect(200);
   });
 
   it('binds a preview to the browser session that created it', async () => {
